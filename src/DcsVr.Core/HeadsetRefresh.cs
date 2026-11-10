@@ -40,7 +40,9 @@ public static partial class HeadsetRefresh
         var key = runtime + "|" + PimaxRuntimeFolder + "|" + PimaxLogFolder + "|" + SteamVrSettings;
         var now = Environment.TickCount64;
         if (Volatile.Read(ref _detectCache) is { } cached && cached.Key == key && now - cached.At < 3000) return cached.Fact;
-        var fact = runtime == RuntimeKind.SboysSteamVr
+        // A Quest's runtime (VDXR, Quest Link) does not report its refresh rate: the profile's value is used.
+        var fact = runtime == RuntimeKind.Quest ? null
+            : runtime == RuntimeKind.SboysSteamVr
             ? SetupDetection.ReadSteamVrRefresh(SteamVrSettings) is { } steam ? new HeadsetRefreshFact(steam, "SteamVR") : null
             : ReadPimaxRuntime(PimaxRuntimeFolder) ?? ReadPimax(PimaxLogFolder);
         Volatile.Write(ref _detectCache, new Cached(key, fact, now));

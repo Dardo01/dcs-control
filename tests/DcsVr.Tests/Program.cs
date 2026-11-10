@@ -971,6 +971,70 @@ Test("Baseline and framegen installation in isolated DCS fixture", () =>
     Require(plan.LaunchEnvironment[VectorXr.DisableVariable] == "1", "VectorXR stays off while DCS runs with the profile's own layers");
     var store = new OriginalsStore(Path.Combine(root, "originals/full-plan")); store.Apply(plan); Require(new LuaOptions(File.ReadAllText(options)).Get("VR", "enable") == "true"); Require(store.RestoreOriginals().Complete); Require(Hashing.FileSha256(options) == before);
 });
+// ---- This fork: the Meta Quest route and 2D ----
+Test("Quest: Quad Views is the bundled provider with a fixed focus from the profile, never Pimax's", () =>
+{
+    var p = ProfileValidation.ResolveFeatures(new VrProfile { Runtime = RuntimeKind.Quest, QuadViews = QuadProvider.PimaxNative, Gaze = GazeMode.EyeTracked, FoveaSource = FoveaSource.PimaxPlay });
+    Require(p.QuadViews == QuadProvider.QuadViewsFoveated && p.Gaze == GazeMode.Fixed && p.FoveaSource == FoveaSource.Profile);
+    Require(ProfileValidation.Validate(new VrProfile { Runtime = RuntimeKind.Quest }).Any(i => i.Code == "quad-runtime"), "raw Pimax native Quad Views is refused on Quest");
+    Require(!PimaxFovea.UsesPimaxPlay(new VrProfile { Runtime = RuntimeKind.Quest, QuadViews = QuadProvider.QuadViewsFoveated, FoveaSource = FoveaSource.PimaxPlay }));
+    Require(HeadsetRefresh.Detect(RuntimeKind.Quest) is null, "a Quest's refresh rate is set by hand");
+    Require(JsonData.Deserialize<VrProfile>(JsonData.Serialize(p)) == p, "JSON round trip");
+});
+Test("Quest: the runtime is VDXR or Meta's, the active one first, and the override wins", () =>
+{
+    var (vd, meta) = (QuestRoute.VirtualDesktopManifest, QuestRoute.MetaManifest);
+    try
+    {
+        QuestRoute.VirtualDesktopManifest = Path.Combine(root, "quest-find/Virtual Desktop Streamer/OpenXR/virtualdesktop-openxr.json");
+        QuestRoute.MetaManifest = Path.Combine(root, "quest-find/Oculus/Support/oculus-runtime/oculus_openxr_64.json");
+        Require(QuestRoute.Find(null) is null, "nothing installed");
+        Make("quest-find/Oculus/Support/oculus-runtime/oculus_openxr_64.json", "{}");
+        Require(QuestRoute.Find(null) == QuestRoute.MetaManifest && QuestRoute.Name(QuestRoute.MetaManifest) == "Meta Quest Link");
+        Make("quest-find/Virtual Desktop Streamer/OpenXR/virtualdesktop-openxr.json", "{}");
+        Require(QuestRoute.Find(null) == QuestRoute.VirtualDesktopManifest, "VDXR before Meta's");
+        Require(QuestRoute.Find(QuestRoute.MetaManifest) == QuestRoute.MetaManifest, "the registered Quest runtime first");
+        Require(QuestRoute.Find(Path.Combine(root, "steamxr_win64.json")) == QuestRoute.VirtualDesktopManifest, "another registered runtime is not a Quest's");
+        var inventory = new InventorySnapshot { QuestRuntime = "quest.json", SteamVrRuntime = "steam.json", PimaxRuntime = "pimax.json" };
+        Require(RouteRuntime.Manifest(new VrProfile { Runtime = RuntimeKind.Quest }, inventory) == "quest.json");
+        Require(RouteRuntime.Manifest(new VrProfile { Runtime = RuntimeKind.Quest, RuntimeManifestPath = "override.json" }, inventory) == "override.json");
+        Require(RouteRuntime.Manifest(new VrProfile { Runtime = RuntimeKind.SboysSteamVr }, inventory) == "steam.json" && RouteRuntime.Manifest(new VrProfile(), inventory) == "pimax.json");
+    }
+    finally { (QuestRoute.VirtualDesktopManifest, QuestRoute.MetaManifest) = (vd, meta); }
+});
+Test("Quest: a running Virtual Desktop Streamer or Quest Link is the Quest route", () =>
+{
+    var none = new DetectionSources { SteamVrServerLog = Path.Combine(root, "missing.txt"), PimaxPlaySettings = Path.Combine(root, "missing.json"), NeuralRuntimeFolders = [] };
+    Require(SetupDetection.DetectActiveRoute(none with { ProcessRunning = n => n == "VirtualDesktop.Streamer" }).Route == RuntimeKind.Quest);
+    Require(SetupDetection.DetectActiveRoute(none with { ProcessRunning = n => n == "OVRServer_x64" }).Route == RuntimeKind.Quest);
+    var detected = SetupDetection.Detect(new VrProfile { QuadViews = QuadProvider.QuadViewsFoveated, Gaze = GazeMode.EyeTracked }, new InventorySnapshot(), none with { ProcessRunning = n => n == "VirtualDesktop.Streamer" });
+    Require(detected.Profile.Runtime == RuntimeKind.Quest && detected.Profile.Gaze == GazeMode.Fixed && detected.Profile.FoveaSource == FoveaSource.Profile);
+});
+Test("Quest: DCS launches on the Quest's runtime, in VR", () =>
+{
+    var exe = Make("quest-plan/bin/DCS.exe", "fixture"); var options = Make("quest-plan/options.lua", Lua);
+    var runtime = Make("quest-plan/vd/virtualdesktop-openxr.json", "{\"runtime\":{\"library_path\":\"runtime.dll\"}}"); Make("quest-plan/vd/runtime.dll", "fixture");
+    var p = ProfileValidation.ResolveFeatures(new VrProfile { Runtime = RuntimeKind.Quest, QuadViews = QuadProvider.None });
+    var plan = new DeploymentPlanner(new(null, null, null)).Build(p, new() { DcsExecutable = exe, OptionsPath = options, QuestRuntime = runtime }, Path.Combine(root, "quest-plan/managed"));
+    Require(plan.LaunchEnvironment["XR_RUNTIME_JSON"] == Path.GetFullPath(runtime));
+    Require(plan.Files.Single(f => f.Path == options).LuaChanges!.Single(c => c.Path == "VR.enable").InstalledRaw == "true");
+    Require(ProfileValidation.Validate(p, new() { DcsExecutable = exe, OptionsPath = options }).Any(i => i.Code == "quest-not-found"), "no Quest runtime is an error");
+    Require(!ProfileValidation.Validate(p, new() { DcsExecutable = exe, OptionsPath = options, QuestRuntime = runtime }).Any(i => i.Code == "quest-not-found"));
+});
+Test("2D: VR off on the monitor, DLSS 5 only when chosen, nothing else of VR", () =>
+{
+    var vr = new VrProfile { Runtime = RuntimeKind.Quest, QuadViews = QuadProvider.QuadViewsFoveated, NeuralRendering = true, FrameGen = FrameGeneration.Nvidia };
+    var flat = (vr with { Desktop = true, DesktopFlat = true }).ForLaunch();
+    Require(flat.QuadViews == QuadProvider.None && !flat.NeuralRendering && flat.FrameGen == FrameGeneration.Off && !flat.UsesCheeky, "VR features stay in the profile but do not run");
+    var dlss = (vr with { Desktop = true, DesktopFlat = true, DesktopNeuralRendering = true }).ForLaunch();
+    Require(dlss.NeuralRendering && dlss.UsesCheeky && !dlss.UsesQuadFocus && !dlss.FoveatedDlss && dlss.FrameGen == FrameGeneration.Off);
+    var exe = Make("flat/bin/DCS.exe", "fixture"); var options = Make("flat/options.lua", Lua.Replace("enable=false", "enable=true"));
+    var plan = new DeploymentPlanner(new(null, null, null)).Build(vr with { Desktop = true, DesktopFlat = true }, new() { DcsExecutable = exe, OptionsPath = options }, Path.Combine(root, "flat/managed"));
+    Require(plan.Files.Single(f => f.Path == options).LuaChanges!.Single(c => c.Path == "VR.enable").InstalledRaw == "false", "2D turns DCS's VR off");
+    Require(!plan.LaunchEnvironment.ContainsKey("XR_RUNTIME_JSON"));
+    var other = new DeploymentPlanner(new(null, null, null)).Build(vr with { Desktop = true }, new() { DcsExecutable = exe, OptionsPath = options }, Path.Combine(root, "flat/managed-other"));
+    Require(!(other.Files.SingleOrDefault(f => f.Path == options)?.LuaChanges ?? []).Any(c => c.Path == "VR.enable"), "Optimizations only keeps DCS's VR setting");
+});
 var failed = new List<string>(); var timer = Stopwatch.StartNew();
 Test("Software Quad Views plus framegen deploys per-process configuration", () =>
 {

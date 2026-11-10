@@ -66,6 +66,11 @@ public static class SetupDetection
                 return new(null, "SteamVR is running the headset through Pimax's SteamVR driver (" + hmd + ").", tracking);
             return new(null, "SteamVR is running a headset through " + hmd.Split('.')[0] + ".", tracking);
         }
+        // A Meta Quest (this fork): Virtual Desktop's streamer or Meta's Quest Link service.
+        if (sources.ProcessRunning("VirtualDesktop.Streamer"))
+            return new(RuntimeKind.Quest, "Virtual Desktop Streamer is running (Meta Quest route).", TrackingKind.Unknown);
+        if (sources.ProcessRunning("OVRServer_x64"))
+            return new(RuntimeKind.Quest, "Meta Quest Link is running (Meta Quest route).", TrackingKind.Unknown);
         if (sources.ProcessRunning("pi_server"))
             return new(null, "Pimax Play is running and SteamVR is not. Use the Pimax route, or start SteamVR first for Sboys.", TrackingKind.Unknown);
         return new(null, "No running headset software was detected. Start Pimax Play, or SteamVR with Sboys, then detect again.", TrackingKind.Unknown);
@@ -85,7 +90,7 @@ public static class SetupDetection
             // A running Pimax or SteamVR route is what this PC flies with: it replaces Optimizations only, whose VR settings
             // were kept in the profile and come back with it.
             profile = profile with { Desktop = false, Runtime = route, RuntimeManifestPath = route == profile.Runtime ? profile.RuntimeManifestPath : null };
-            Set("runtime", "How you fly", (route == RuntimeKind.SboysSteamVr ? "Sboys · SteamVR OpenXR" : "Pimax OpenXR") + (current.Desktop ? " (instead of Optimizations only)" : ""), active.Summary);
+            Set("runtime", "How you fly", (route switch { RuntimeKind.SboysSteamVr => "Sboys · SteamVR OpenXR", RuntimeKind.Quest => "Meta Quest · " + QuestRoute.Name(inventory.QuestRuntime), _ => "Pimax OpenXR" }) + (current.Desktop ? " (instead of Optimizations only)" : ""), active.Summary);
         }
         else
         {
@@ -103,7 +108,12 @@ public static class SetupDetection
 
         if (profile.QuadViews != QuadProvider.None)
         {
-            if (profile.Runtime == RuntimeKind.SboysSteamVr && GazeBridge.RuntimeProvidesGaze(inventory))
+            if (profile.Runtime == RuntimeKind.Quest)
+            {
+                profile = profile with { Gaze = GazeMode.Fixed, FoveaSource = FoveaSource.Profile };
+                Set("gaze", "Focus movement", "Fixed", "A Meta Quest 3 has no eye tracking");
+            }
+            else if (profile.Runtime == RuntimeKind.SboysSteamVr && GazeBridge.RuntimeProvidesGaze(inventory))
             {
                 profile = profile with { Gaze = GazeMode.EyeTracked };
                 Set("gaze", "Focus movement", "Eye tracked", "Sboys 1.3 or newer exposes eye gaze through SteamVR OpenXR");
