@@ -294,16 +294,29 @@ function featureNotes(p) {
   return notes;
 }
 function noteHtml([kind,text,path,action]) { return `<div class="feature-note ${kind}"><span>${escape(text)}</span>${path ? `<button class="link-button" data-reveal="${path}"${action === 'Select file' ? ' data-browse-after="1"' : ''}>${escape(action)} →</button>` : ''}</div>`; }
+/** 2D / Optimizations only (this fork): DLSS 5 runs on the monitor image (desktopNeuralRendering); frame generation in 2D
+ *  is NVIDIA Smooth Motion, a driver setting the pilot turns on in the NVIDIA App (OFXR works only in the headset). */
+function desktopFeature(key, p) {
+  if (key === 'dlss') {
+    const notes = p.desktopNeuralRendering && !p.neuralRuntimePath && !state?.savedRuntime ? [['needs','Runtime file missing.','neuralRuntimePath','Select file']] : [];
+    return {on:Boolean(p.desktopNeuralRendering), summary:p.desktopNeuralRendering ? 'On the whole monitor image · experimental' : 'Off · DLSS 5 on the monitor image (experimental)', notes, open:true};
+  }
+  if (key === 'framegen') return {on:false, disabled:true, summary:'In 2D: NVIDIA Smooth Motion', open:false,
+    notes:[['info','In 2D, frame generation is NVIDIA Smooth Motion (RTX 40/50): NVIDIA App → Graphics → Program settings → DCS World → Driver settings → Smooth Motion On. The headset frame generation (OFXR) runs only in VR.']]};
+  return null;
+}
 function renderFeatures() {
   const on = featureState(profile), notes = featureNotes(profile);
   FEATURES.forEach(([key]) => {
-    const item = $('feature-'+key); item.classList.toggle('on',on[key]);
-    // On a monitor or with another headset only the optimizations are features here.
-    item.hidden = Boolean(profile.desktop) && !['engine','boost'].includes(key);
+    const item = $('feature-'+key), flat = profile.desktop ? desktopFeature(key, profile) : null;
+    item.classList.toggle('on',flat ? flat.on : on[key]);
+    // On a monitor or with another headset: the optimizations, DLSS 5 on the monitor and how to get frame generation in 2D.
+    item.hidden = Boolean(profile.desktop) && !['engine','boost','dlss','framegen'].includes(key);
     if (key === 'quad') $('featureGroup-vr').hidden = Boolean(profile.desktop);
-    const box = $('featureCheck-'+key); box.checked = on[key]; box.disabled = busy;
-    const summary = featureSummary(key,profile); $('featureSummary-'+key).textContent = summary; $('featureSummary-'+key).title = summary;
-    $('featureNotes-'+key).innerHTML = notes[key].map(noteHtml).join('');
+    const box = $('featureCheck-'+key); box.checked = flat ? flat.on : on[key]; box.disabled = busy || Boolean(flat?.disabled);
+    const summary = flat ? flat.summary : featureSummary(key,profile); $('featureSummary-'+key).textContent = summary; $('featureSummary-'+key).title = summary;
+    $('featureNotes-'+key).innerHTML = (flat ? flat.notes : notes[key]).map(noteHtml).join('');
+    const open = item.querySelector('.feature-open'); if (open) open.hidden = Boolean(flat && !flat.open);
   });
   $('profileName').textContent = profile.name;
   // Undo changes: the draft differs from the applied profile and nothing locks it.
@@ -949,12 +962,15 @@ function buildFeatureList() {
   $('featureList').innerHTML = FEATURES.map(([key,title,,target]) => groupLabel(key) + `<div class="feature" id="feature-${key}"><label class="feature-check"><input type="checkbox" id="featureCheck-${key}" data-feature="${key}" aria-describedby="featureSummary-${key}"><span class="feature-text"><b>${title}</b><small class="feature-summary" id="featureSummary-${key}"></small></span></label><button type="button" class="feature-open" data-open-page="${target}" aria-label="Open ${title} settings" title="Open ${title} settings">›</button><div class="feature-notes" id="featureNotes-${key}"></div></div>`).join('');
   $('featureList').addEventListener('change',e => {
     const key = e.target.dataset?.feature; if (!key || busy) return;
+    // In 2D the DLSS row is DLSS 5 on the monitor; frame generation there is NVIDIA Smooth Motion (not a profile setting).
+    if (profile.desktop && key === 'dlss') { profile.desktopNeuralRendering = e.target.checked; change(); return; }
+    if (profile.desktop && key === 'framegen') { e.target.checked = false; return; }
     setFeature(profile,key,e.target.checked); change(); if (key === 'boost') boostChanged();
   });
 }
 function navigate(id) {
   // The VR pages are hidden with Optimizations only: whatever leads there (Ctrl+number, a link, search) opens the overview.
-  if (profile?.desktop && VR_PAGES.includes(id)) id = 'overview';
+  if (profile?.desktop && VR_PAGES.includes(id) && !(id === 'dlss' && profile.desktopNeuralRendering)) id = 'overview';
   const entry = pages.find(p => p[0] === id); if (!entry) return; page = id;
   pages.forEach(p => { $('page-'+p[0]).hidden = p[0] !== id; $('nav-'+p[0]).classList.toggle('selected',p[0] === id); $('nav-'+p[0]).setAttribute('aria-current',p[0] === id ? 'page' : 'false'); });
   $('pageTitle').textContent = entry[1]; $('pageDescription').textContent = entry[2]; $('scrollArea').scrollTop = 0;
