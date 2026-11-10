@@ -784,9 +784,9 @@ function buildFields() {
   c = card('gameControls','DCS','Detected automatically; change only if DCS is somewhere else.');
   field(c,'dcs','DCS executable','DCS.exe in the bin folder of your installation.','path');
   field(c,'options','DCS settings file','options.lua in Saved Games\\DCS\\Config.','path');
-  field(c,'keepDcsLauncher','Show the DCS launcher',['On: the DCS launcher opens first. Off: straight into the game.','With the launcher, press Play there. Back to stock DCS turns the launcher back on.'],'toggle');
+  field(c,'keepDcsLauncher','Show the DCS launcher',['On: the DCS launcher opens first, and its preset chooses VR or 2D (this app leaves DCS\'s VR switch alone). Off: straight into the game.','With the launcher, pick your preset and press Play there. Back to stock DCS turns the launcher back on.'],'toggle');
   // 2D (this fork): shown with Optimizations only, chosen in the right panel.
-  field(c,'desktopFlat','2D: start DCS on the monitor',['Turns DCS\'s VR off while this profile is applied, even with the headset connected.','Back to stock DCS turns it back on. Choose Quest 3 (or Pimax, Sboys) in the right panel to fly in VR again.'],'toggle',null,null,'',p => !p.desktop);
+  field(c,'desktopFlat','2D: start DCS on the monitor',['Turns DCS\'s VR off while this profile is applied, even with the headset connected. With the DCS launcher shown, its preset decides instead.','Back to stock DCS turns it back on. Choose Quest 3 (or Pimax, Sboys) in the right panel to fly in VR again.'],'toggle',null,p => !p.keepDcsLauncher,'',p => !p.desktop);
   field(c,'desktopNeuralRendering','DLSS 5 on the monitor (experimental)',['NVIDIA DLSS-NR on the whole image, with nothing that lowers quality: no Quad Views, no frame generation.','Uses the same nvngx_dlssnr.dll as in VR (DLSS page) and turns DCS\'s upscaling to DLSS. Tested by its author in VR only.'],'toggle',null,null,'',p => !p.desktop);
   // Pupil shift (native/pupil_shift): an OpenXR layer first in the chain; it needs the gaze of eye-tracked Quad Views.
   const pupil = p => p.pupilShift;

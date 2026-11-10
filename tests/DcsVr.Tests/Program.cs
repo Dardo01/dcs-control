@@ -1021,6 +1021,18 @@ Test("Quest: DCS launches on the Quest's runtime, in VR", () =>
     Require(ProfileValidation.Validate(p, new() { DcsExecutable = exe, OptionsPath = options }).Any(i => i.Code == "quest-not-found"), "no Quest runtime is an error");
     Require(!ProfileValidation.Validate(p, new() { DcsExecutable = exe, OptionsPath = options, QuestRuntime = runtime }).Any(i => i.Code == "quest-not-found"));
 });
+Test("With the DCS launcher kept, its preset chooses VR or 2D: VR.enable is left alone", () =>
+{
+    var exe = Make("launcher-vr/bin/DCS.exe", "fixture"); var options = Make("launcher-vr/options.lua", Lua);
+    var runtime = Make("launcher-vr/vd/virtualdesktop-openxr.json", "{\"runtime\":{\"library_path\":\"runtime.dll\"}}"); Make("launcher-vr/vd/runtime.dll", "fixture");
+    var inv = new InventorySnapshot { DcsExecutable = exe, OptionsPath = options, QuestRuntime = runtime };
+    foreach (var p in new[] { new VrProfile { Runtime = RuntimeKind.Quest, QuadViews = QuadProvider.None, KeepDcsLauncher = true }, new VrProfile { Desktop = true, DesktopFlat = true, KeepDcsLauncher = true } })
+    {
+        var plan = new DeploymentPlanner(new(null, null, null)).Build(p, inv, Path.Combine(root, "launcher-vr/managed-" + p.Desktop));
+        Require(!plan.Files.Where(f => f.Path == options).SelectMany(f => f.LuaChanges ?? []).Any(c => c.Path == "VR.enable" || c.Path == "miscellaneous.launcher"), "launcher and VR switch untouched");
+        if (!p.Desktop) Require(plan.LaunchEnvironment["XR_RUNTIME_JSON"] == Path.GetFullPath(runtime), "the Quest's runtime is ready if the preset picks VR");
+    }
+});
 Test("2D: VR off on the monitor, DLSS 5 only when chosen, nothing else of VR", () =>
 {
     var vr = new VrProfile { Runtime = RuntimeKind.Quest, QuadViews = QuadProvider.QuadViewsFoveated, NeuralRendering = true, FrameGen = FrameGeneration.Nvidia };
