@@ -232,9 +232,29 @@ public static class FlightModes
         Directory.CreateDirectory(scratchFolder);
         var script = Path.Combine(scratchFolder, "oculus-debug-commands.txt");
         AtomicFile.WriteText(script, OculusScript(commands));
-        using var process = Process.Start(new ProcessStartInfo(cli) { ArgumentList = { "-f", script }, UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(cli)! });
+        // Stdin is redirected and closed after "exit": without it the CLI can sit waiting for typed commands.
+        var start = new ProcessStartInfo(cli)
+        {
+            ArgumentList = { "-f", script }, UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(cli)!,
+            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
+        };
+        using var process = Process.Start(start);
         if (process is null) return "OculusDebugToolCLI.exe no arrancó.";
-        if (!process.WaitForExit(TimeSpan.FromSeconds(15))) { try { process.Kill(); } catch (InvalidOperationException) { } return "OculusDebugToolCLI.exe no terminó en 15 segundos."; }
+        var output = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        process.OutputDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) output.Enqueue(e.Data.Trim()); };
+        process.ErrorDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) output.Enqueue(e.Data.Trim()); };
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        try { process.StandardInput.Write("exit\r\n"); process.StandardInput.Close(); } catch (IOException) { }
+        if (!process.WaitForExit(TimeSpan.FromSeconds(30)))
+        {
+            try { process.Kill(); } catch (InvalidOperationException) { }
+            var last = output.LastOrDefault();
+            return "OculusDebugToolCLI.exe no respondió en 30 segundos (¿está conectado Quest Link?)." + (last is null ? "" : " Última línea: " + last);
+        }
+        process.WaitForExit();
+        var error = output.FirstOrDefault(line => line.Contains("error", StringComparison.OrdinalIgnoreCase) || line.Contains("unknown", StringComparison.OrdinalIgnoreCase) || line.Contains("invalid", StringComparison.OrdinalIgnoreCase));
+        if (error is not null) return "respondió: " + error;
         return null;
     }
 
