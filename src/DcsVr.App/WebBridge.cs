@@ -726,7 +726,7 @@ internal sealed class WebBridge(ControlService service, Window? owner = null,
                     // After DCS exits: the programs this launch started are closed and the after-flight commands run.
                     _ = Task.Run(() =>
                     {
-                        try { using (flightProcess) flightProcess.WaitForExit(); foreach (var note in session.End()) { AppLog.Info("Flight mode " + session.Mode.Id + ": " + note); lock (_flightNotesLock) _flightNotes = [.. _flightNotes, note]; } }
+                        try { using (flightProcess) FlightModes.WaitForDcsExit(flightProcess, session.DcsExecutable); foreach (var note in session.End()) { AppLog.Info("Flight mode " + session.Mode.Id + ": " + note); lock (_flightNotesLock) _flightNotes = [.. _flightNotes, note]; } }
                         catch (Exception e) { AppLog.Error("Flight mode end", e); }
                     });
                     return Reply(id, await SimpleView());

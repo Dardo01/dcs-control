@@ -324,6 +324,30 @@ public static class FlightModes
         Process.Start(new ProcessStartInfo(app.Path) { Arguments = app.Arguments ?? "", UseShellExecute = true, WorkingDirectory = Path.GetDirectoryName(app.Path) ?? "" });
 
     public static Action<TimeSpan> Delay { get; set; } = Thread.Sleep;
+
+    /// <summary>Waits until DCS has really closed. The process the app starts can hand over to another DCS.exe and exit
+    /// within seconds (Steam's restart or DCS's own updater check), so a quick exit is followed by watching for DCS.exe by
+    /// name until it is gone, instead of ending the flight there and closing its programs.</summary>
+    public static void WaitForDcsExit(Process launched, string? dcsExecutable)
+    {
+        var name = Path.GetFileNameWithoutExtension(string.IsNullOrWhiteSpace(dcsExecutable) ? "DCS.exe" : dcsExecutable);
+        var started = DateTime.UtcNow;
+        launched.WaitForExit();
+        var handOver = DateTime.UtcNow - started < TimeSpan.FromMinutes(2);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(90);
+        var seen = false;
+        while (true)
+        {
+            if (IsRunning(name + ".exe")) seen = true;
+            else if (!handOver || seen || DateTime.UtcNow > deadline)
+            {
+                Delay(TimeSpan.FromSeconds(5));
+                if (!IsRunning(name + ".exe")) return;
+                seen = true;
+            }
+            Delay(TimeSpan.FromSeconds(5));
+        }
+    }
 }
 
 /// <summary>What a flight mode set up before DCS started, so <see cref="End"/> can undo the per-flight part.</summary>
@@ -331,12 +355,15 @@ public sealed class FlightSession(FlightMode mode, string scratchFolder)
 {
     private readonly List<(CompanionApp App, Process Process)> _started = [];
     private Process? _oculus;
+    /// <summary>DCS.exe this flight started, set by <see cref="Begin"/>.</summary>
+    public string? DcsExecutable { get; private set; }
     public FlightMode Mode { get; } = mode;
     public List<string> Notes { get; } = [];
 
     /// <summary>Everything before DCS starts: options.lua, the DLSS 5 switch, Oculus Debug Tool and the programs.</summary>
     public void Begin(FlightModeSet set, string? optionsPath, IReadOnlyCollection<string> ownedSettings, string? dcsExecutable)
     {
+        DcsExecutable = dcsExecutable;
         if (optionsPath is not null && File.Exists(optionsPath) && Mode.DcsSettings.Count > 0)
         {
             var (text, changed, skipped) = FlightModes.PatchOptions(File.ReadAllText(optionsPath), Mode.DcsSettings, ownedSettings);

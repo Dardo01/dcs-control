@@ -137,7 +137,7 @@ try
             var (sync, process, session) = service.LaunchFlight(modeId, null, inventory);
             Console.WriteLine(sync.Message + " DCS launched in " + session.Mode.Name + ".");
             foreach (var note in session.Notes) Console.WriteLine(note);
-            using (process) process.WaitForExit();
+            using (process) FlightModes.WaitForDcsExit(process, session.DcsExecutable);
             foreach (var note in session.End()) Console.WriteLine(note);
             break;
         }
