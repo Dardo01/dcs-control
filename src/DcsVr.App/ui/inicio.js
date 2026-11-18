@@ -39,14 +39,19 @@ function renderVolar() {
   document.querySelectorAll('.mode').forEach(b => {
     b.setAttribute('aria-checked',String(b.dataset.mode === selected));
     const m = mode(b.dataset.mode), apps = (m?.apps || []).filter(a => a.enabled).map(a => a.name);
-    b.querySelector('.apps').textContent = apps.length ? 'Abre '+apps.join(', ') : '';
+    b.querySelector('.apps').innerHTML = apps.map(a => '<span>'+escape(a)+'</span>').join('');
   });
   $('dlss5').checked = Boolean(set.dlss5On);
   const configured = set.dlss5?.targetPath && set.dlss5?.replacementPath;
   $('dlssState').textContent = !configured ? (set.dlss5On ? 'Activado, pero falta elegir el DLL en Ajustes' : 'Desactivado · elige el DLL en Ajustes')
     : set.dlss5On ? 'Activado en 2D y en VR' : 'Desactivado';
-  $('fly').disabled = busy || view.dcsRunning;
-  $('fly').textContent = view.dcsRunning ? 'DCS EN MARCHA' : busy ? 'INICIANDO…' : 'VOLAR';
+  $('fly').disabled = busy || view.dcsRunning || !view.dcs;
+  $('flyText').textContent = view.dcsRunning ? 'EN VUELO' : busy ? 'INICIANDO…' : 'VOLAR';
+  const led = $('readyLed'); led.className = 'led '+(view.dcsRunning ? 'run' : view.dcs ? 'ok' : 'bad');
+  $('readyText').textContent = view.dcsRunning ? 'DCS en marcha' : view.dcs ? 'DCS listo · '+(selected === 'vr' ? 'Quest Link' : 'Monitor') : 'No se encuentra DCS · revisa Ajustes';
+  const o = view.optimizations;
+  $('strip').innerHTML = [['Motor optimizado',o.engineOptimizations],['Prioridad de CPU',o.cpuBoost],['VRAM libre',o.freeVram],['DLSS 5',set.dlss5On && configured]]
+    .map(([t,on]) => `<span class="${on ? 'on' : ''}"><i></i>${t}</span>`).join('');
   $('notes').innerHTML = (view.notes || []).map(n => '<li>'+escape(n)+'</li>').join('');
 }
 
@@ -61,12 +66,13 @@ async function fly() {
 /* ---------- Ajustes ---------- */
 function renderAjustes() {
   const set = view.set;
-  $('apps').innerHTML = set.modes.map(m => `<div class="group" data-mode="${escape(m.id)}"><h3>En ${escape(m.name)}</h3>
-    ${(m.apps || []).map((a,i) => `<div class="app" data-index="${i}">
+  $('apps').innerHTML = set.modes.map(m => `<div class="group" data-mode="${escape(m.id)}"><h3>Al volar en <span>${escape(m.name)}</span></h3>
+    ${(m.apps || []).map((a,i) => `<div class="app${a.enabled ? '' : ' off'}" data-index="${i}">
       <input type="checkbox" data-app="enabled" ${a.enabled ? 'checked' : ''} title="Abrir con DCS">
+      <span class="ico" aria-hidden="true">${escape((a.name || '?').slice(0,1).toUpperCase())}</span>
       <div><div class="name">${escape(a.name)}</div><div class="where" title="${escape(a.path)}">${escape(a.path)}</div></div>
-      <button class="small" data-app="change">Cambiar…</button><button class="icon" data-app="remove" title="Quitar">✕</button></div>`).join('') || '<p>Ninguno.</p>'}
-    <button class="small" data-app="add">Añadir programa…</button></div>`).join('');
+      <button class="small" data-app="change">Cambiar…</button><button class="icon" data-app="remove" title="Quitar">✕</button></div>`).join('') || '<p class="empty">Ningún programa todavía.</p>'}
+    <button class="small add" data-app="add">+ Añadir programa</button></div>`).join('');
   $('dllTarget').value = set.dlss5?.targetPath || ''; $('dllReplacement').value = set.dlss5?.replacementPath || '';
   $('optEngine').checked = view.optimizations.engineOptimizations; $('optBoost').checked = view.optimizations.cpuBoost; $('optVram').checked = view.optimizations.freeVram;
   $('dcsPath').value = view.dcs || ''; $('optionsPath').value = view.options || '';
@@ -112,7 +118,7 @@ async function browse(target) {
 /* ---------- Arranque ---------- */
 function showTab(tab) {
   document.querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected',String(b.dataset.tab === tab)));
-  $('volar').hidden = tab !== 'volar'; $('ajustes').hidden = tab !== 'ajustes';
+  $('volar').hidden = tab !== 'volar'; $('ajustes').hidden = tab !== 'ajustes'; document.body.dataset.tab = tab;
   if (tab === 'volar') flushSave().catch(showError);
 }
 
@@ -129,6 +135,15 @@ function setup() {
   }));
   $('dlss5').addEventListener('change',e => { if (!view) return; view.set.dlss5On = e.target.checked; renderVolar(); save().catch(showError); });
   $('fly').addEventListener('click',fly);
+  document.addEventListener('keydown',e => { if (e.key === 'Enter' && document.body.dataset.tab === 'volar' && !e.target.closest('input,textarea') && !$('fly').disabled) { e.preventDefault(); fly(); } });
+  // Ajustes: the side list follows the section in view.
+  document.querySelectorAll('.side a').forEach(a => a.addEventListener('click',e => { e.preventDefault(); document.querySelector(a.getAttribute('href')).scrollIntoView({behavior:'smooth'}); }));
+  document.querySelector('main').addEventListener('scroll',() => {
+    if (document.body.dataset.tab !== 'ajustes') return;
+    let current = 'programas';
+    document.querySelectorAll('.card').forEach(c => { if (c.getBoundingClientRect().top < 160) current = c.id.slice(2); });
+    document.querySelectorAll('.side a').forEach(a => a.classList.toggle('on',a.getAttribute('href') === '#s-'+current));
+  });
 
   $('ajustes').addEventListener('input',e => { if (e.target.closest('.app') || e.target.type === 'checkbox') return; saveSoon(); });
   $('ajustes').addEventListener('click',async e => {
