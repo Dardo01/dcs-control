@@ -53,12 +53,6 @@
         </button>
       </div>
 
-      <label class="dlss">
-        <span class="dlss-badge" aria-hidden="true">DLSS<b>5</b></span>
-        <span class="dlss-text"><b>Renderizado neuronal NVIDIA</b><small id="dlssState">Desactivado</small></span>
-        <input type="checkbox" id="dlss5" role="switch"><i aria-hidden="true"></i>
-      </label>
-
       <button id="fly" class="fly"><span class="chev" aria-hidden="true">›››</span><span id="flyText">VOLAR</span><span class="chev" aria-hidden="true">‹‹‹</span></button>
       <p id="status" class="status" aria-live="polite"></p>
       <ul id="notes" class="notes"></ul>
@@ -70,7 +64,7 @@
   <section id="ajustes" class="view" hidden>
     <div class="settings">
       <nav class="side" aria-label="Secciones">
-        <a href="#s-programas" class="on">Programas</a><a href="#s-dlss">DLSS 5</a><a href="#s-rendimiento">Rendimiento</a><a href="#s-dcs">DCS</a><a href="#s-avanzado">Avanzado</a>
+        <a href="#s-programas" class="on">Programas</a><a href="#s-rendimiento">Rendimiento</a><a href="#s-dcs">DCS</a><a href="#s-avanzado">Avanzado</a>
         <p id="saved" class="saved" aria-live="polite"></p>
       </nav>
       <div class="cards" id="cards">
@@ -79,27 +73,21 @@
           <div id="apps"></div>
         </div>
 
-        <div class="card" id="s-dlss">
-          <div class="card-head"><span class="num">02</span><div><h2>DLSS 5</h2><p>Activado, tu DLL sustituye al de DCS. Desactivado, vuelve el original (se guarda una copia la primera vez).</p></div></div>
-          <label class="path">DLL que usa DCS<span><input id="dllTarget" placeholder="…\DCSWorld\bin-mt\nvngx_dlss.dll"><button class="small" data-browse="dllTarget">Buscar…</button></span></label>
-          <label class="path">Tu DLL de DLSS 5<span><input id="dllReplacement" placeholder="…\nvngx_dlss.dll"><button class="small" data-browse="dllReplacement">Buscar…</button></span></label>
-        </div>
-
         <div class="card" id="s-rendimiento">
-          <div class="card-head"><span class="num">03</span><div><h2>Rendimiento</h2><p>Funcionan en 2D y en VR, sin cambiar la imagen.</p></div></div>
+          <div class="card-head"><span class="num">02</span><div><h2>Rendimiento</h2><p>Funcionan en 2D y en VR, sin cambiar la imagen.</p></div></div>
           <label class="row"><span><b>Optimizaciones del motor</b><small>Quitan trabajo a la CPU dentro de DCS. Más FPS cuando la CPU es el límite.</small></span><input type="checkbox" id="optEngine" role="switch"><i aria-hidden="true"></i></label>
           <label class="row"><span><b>Prioridad de CPU</b><small>DCS usa los núcleos más rápidos y tiene prioridad mientras vuelas.</small></span><input type="checkbox" id="optBoost" role="switch"><i aria-hidden="true"></i></label>
           <label class="row"><span><b>Liberar memoria de vídeo</b><small>Cierra programas que gastan VRAM antes de volar y los vuelve a abrir después.</small></span><input type="checkbox" id="optVram" role="switch"><i aria-hidden="true"></i></label>
         </div>
 
         <div class="card" id="s-dcs">
-          <div class="card-head"><span class="num">04</span><div><h2>DCS</h2><p>Se detectan solos. Cámbialos solo si tienes más de una instalación.</p></div></div>
+          <div class="card-head"><span class="num">03</span><div><h2>DCS</h2><p>Se detectan solos. Cámbialos solo si tienes más de una instalación.</p></div></div>
           <label class="path">DCS.exe<span><input id="dcsPath"><button class="small" data-browse="dcsPath">Buscar…</button></span></label>
           <label class="path">options.lua (Saved Games\DCS\Config)<span><input id="optionsPath"><button class="small" data-browse="optionsPath">Buscar…</button></span></label>
         </div>
 
         <div class="card" id="s-avanzado">
-          <div class="card-head"><span class="num">05</span><div><h2>Avanzado</h2><p>Ajustes de DCS que se escriben antes de volar. Una línea por ajuste: <code>ruta = valor</code>.</p></div></div>
+          <div class="card-head"><span class="num">04</span><div><h2>Avanzado</h2><p>Ajustes de DCS que se escriben antes de volar. Una línea por ajuste: <code>ruta = valor</code>.</p></div></div>
           <div class="two">
             <label>En 2D<textarea id="lua2d" rows="6" spellcheck="false"></textarea></label>
             <label>En VR<textarea id="luavr" rows="6" spellcheck="false"></textarea></label>
