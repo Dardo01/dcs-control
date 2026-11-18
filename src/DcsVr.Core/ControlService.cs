@@ -501,6 +501,23 @@ public sealed class ControlService(string distributionRoot, string stateRoot)
         return (sync, Start(start));
     }
 
+    /// <summary>Launch DCS in a flight mode (2D or VR): the applied profile as in <see cref="SyncAndLaunch"/>, then the
+    /// mode's DCS settings, DLSS 5 switch, Oculus Debug Tool commands and programs, then DCS with --force_enable_VR or
+    /// --force_disable_VR. Call <see cref="FlightSession.End"/> once the returned process exits.</summary>
+    public (LaunchSync Sync, Process Process, FlightSession Session) LaunchFlight(string modeId, VrProfile? draft, InventorySnapshot inventory)
+    {
+        var set = FlightModes.Load(StateRoot);
+        var mode = set.Get(modeId);
+        var (sync, start) = SyncAndPrepareLaunch(draft, inventory);
+        var applied = ReadAppliedProfile();
+        var owned = applied?.Journal.Entries.Where(e => e.LuaChanges is not null).SelectMany(e => e.LuaChanges!).Select(c => c.Path).ToHashSet(StringComparer.Ordinal) ?? [];
+        var session = new FlightSession(mode, Path.Combine(StateRoot, "flight-modes"));
+        session.Begin(set, applied?.OptionsPath ?? inventory.OptionsPath, owned, Path.Combine(StateRoot, "flight-modes", "dll-originals"));
+        session.AddLaunchArgument(start);
+        if (!set.LastModeId.Equals(mode.Id, StringComparison.OrdinalIgnoreCase)) FlightModes.Save(StateRoot, set with { LastModeId = mode.Id });
+        return (sync, Start(start), session);
+    }
+
     /// <summary>
     /// Live mode: writes now, also while DCS runs, the settings its components re-read in flight (<see cref="LiveSettings"/>).
     /// The draft is planned exactly as Launch DCS plans it; of the planned files only the live files are written

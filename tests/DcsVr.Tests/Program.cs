@@ -73,6 +73,55 @@ Test("Test-folder pruning skips a run still going (its lock held) and folders to
 const string Lua = "-- preserve comment\r\noptions = { VR = {enable=false, openxr_quadView = true}, graphics = { Upscaling = \"DLSS\", maxFPS=89, }, [\"other\"] = { [1]=\"a\", }, }";
 Test("Lua existing replacement preserves unrelated text", () => { var patched = new LuaOptions(Lua).Set(["VR", "openxr_quadView"], false); Require(patched == Lua.Replace("openxr_quadView = true", "openxr_quadView = false")); });
 Test("Lua missing field in table without trailing comma", () => { var p = new LuaOptions(Lua).Set(["VR", "openxr_eyeGaze"], true); Require(new LuaOptions(p).Get("VR", "openxr_eyeGaze") == "true"); Require(p.Contains("\r\n")); });
+Test("Flight modes: options.lua gets the mode's values, owned and missing settings are skipped", () =>
+{
+    var text = "options = {\n\t[\"VR\"] = {\n\t\t[\"enable\"] = false,\n\t\t[\"pixel_density\"] = 1.2,\n\t},\n\t[\"graphics\"] = {\n\t\t[\"SSAO\"] = 1,\n\t\t[\"maxFPS\"] = 90,\n\t},\n}\n";
+    var settings = new Dictionary<string, string> { ["VR.enable"] = "true", ["VR.pixel_density"] = "1", ["graphics.maxFPS"] = "72", ["graphics.SSLR"] = "false", ["graphics.SSAO"] = "1" };
+    var (patched, changed, skipped) = FlightModes.PatchOptions(text, settings, new HashSet<string> { "graphics.maxFPS" });
+    var lua = new LuaOptions(patched);
+    Require(lua.Get("VR", "enable") == "true" && lua.Get("VR", "pixel_density") == "1" && lua.Get("graphics", "maxFPS") == "90" && lua.Get("graphics", "SSLR") is null);
+    Require(changed.Count == 2, string.Join(";", changed)); Require(skipped.Count == 2, string.Join(";", skipped));
+});
+Test("Flight modes: the defaults survive a save and load, with a 2D and a VR mode", () =>
+{
+    var state = Path.Combine(root, "flight-modes-roundtrip");
+    FlightModes.Save(state, FlightModeSet.Defaults);
+    var loaded = FlightModes.Load(state);
+    Require(loaded.Get("2d").Kind == FlightKind.Desktop && loaded.Get("2d").LaunchArgument == "--force_disable_VR");
+    Require(loaded.Get("vr").Kind == FlightKind.Vr && loaded.Get("vr").OculusDebug is not null && loaded.Get("vr").DcsSettings["graphics.preloadRadius"] == "60000");
+    Throws<InvalidOperationException>(() => loaded.Get("missing"));
+});
+Test("Flight modes: the DLSS 5 switch puts the replacement in and the original back", () =>
+{
+    var target = Make("dll-swap/bin-mt/nvngx_dlss.dll", "original"); var replacement = Make("dll-swap/mine/nvngx_dlss.dll", "dlss5");
+    var backup = Path.Combine(root, "dll-swap/backup"); var swap = new DllSwap { TargetPath = target, ReplacementPath = replacement };
+    Require(FlightModes.ApplyDllSwap(swap, false, backup) is null && File.ReadAllText(target) == "original");
+    Require(FlightModes.ApplyDllSwap(swap, true, backup) is not null && File.ReadAllText(target) == "dlss5" && FlightModes.DllSwapOn(swap));
+    Require(FlightModes.ApplyDllSwap(swap, true, backup) is null);
+    Require(FlightModes.ApplyDllSwap(swap, false, backup) is not null && File.ReadAllText(target) == "original" && !FlightModes.DllSwapOn(swap));
+    var fresh = new DllSwap { TargetPath = Path.Combine(root, "dll-swap/none/nvngx_dlss.dll"), ReplacementPath = replacement }; var freshBackup = Path.Combine(root, "dll-swap/backup2");
+    FlightModes.ApplyDllSwap(fresh, true, freshBackup); Require(File.Exists(fresh.TargetPath));
+    FlightModes.ApplyDllSwap(fresh, false, freshBackup); Require(!File.Exists(fresh.TargetPath));
+});
+Test("Flight modes: programs start once, an already running one is left alone, and only started ones are listed", () =>
+{
+    var exe = Make("flight-apps/TrackIR5.exe", "x"); var other = Make("flight-apps/Srs.exe", "x");
+    var started = new List<string>(); var (isRunning, startApp, delay) = (FlightModes.IsRunning, FlightModes.StartApp, FlightModes.Delay);
+    FlightModes.IsRunning = path => path == other; FlightModes.StartApp = app => { started.Add(app.Name); return null; }; FlightModes.Delay = _ => { };
+    try
+    {
+        var mode = new FlightMode { Id = "2d", Kind = FlightKind.Desktop, Apps = [new() { Name = "TrackIR", Path = exe }, new() { Name = "SRS", Path = other }, new() { Name = "Off", Path = exe, Enabled = false }, new() { Name = "Gone", Path = Path.Combine(root, "missing.exe") }] };
+        var session = new FlightSession(mode, Path.Combine(root, "flight-apps/scratch"));
+        session.Begin(new FlightModeSet(), null, [], Path.Combine(root, "flight-apps/backup"));
+        Require(started.SequenceEqual(["TrackIR"]), string.Join(",", started));
+        Require(session.Notes.Any(n => n.Contains("already running")) && session.Notes.Any(n => n.Contains("not found")));
+        var start = new ProcessStartInfo("DCS.exe"); session.AddLaunchArgument(start); session.AddLaunchArgument(start);
+        Require(start.ArgumentList.SequenceEqual(["--force_disable_VR"]));
+    }
+    finally { (FlightModes.IsRunning, FlightModes.StartApp, FlightModes.Delay) = (isRunning, startApp, delay); }
+});
+Test("Flight modes: Oculus Debug Tool script ends with exit and skips empty lines", () =>
+    Require(FlightModes.OculusScript(["server:asw.Off", " ", "set-pixels-per-display-pixel-override 1.5"]) == "server:asw.Off\r\nset-pixels-per-display-pixel-override 1.5\r\nexit\r\n"));
 Test("Lua empty table insertion", () => Require(new LuaOptions(new LuaOptions("options={VR={}}").Set(["VR", "enable"], true)).Get("VR", "enable") == "true"));
 Test("Lua strings escape quotes and backslashes", () => { var value = "a\\b\"c\n"; var patched = new LuaOptions(Lua).Set(["graphics", "Upscaling"], value); Require(new LuaOptions(patched).Get("graphics", "Upscaling")!.Contains("\\n")); });
 Test("Lua rejects execution", () => Throws<InvalidDataException>(() => new LuaOptions("options = os.execute('test')")));
