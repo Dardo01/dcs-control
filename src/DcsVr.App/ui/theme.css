@@ -649,3 +649,18 @@ details.boost-details[open]>summary{margin-bottom:6px}
 .sboys-block .inline-actions{margin-top:10px}
 .sboys-block[hidden]{display:none}
 @media(max-width:900px){.setup-actions{flex-wrap:wrap}}
+/* Volar: the 2D and VR flight modes (fly.js). */
+.fly-buttons{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:var(--card-gap,14px);margin-bottom:var(--card-gap,14px)}
+.fly-button{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:22px 24px;min-height:132px;border:1px solid var(--line-strong);border-radius:var(--radius);background:var(--panel);color:var(--text);cursor:pointer;text-align:left;transition:border-color .15s var(--ease),background .15s var(--ease)}
+.fly-button:hover:not(:disabled){border-color:var(--accent);background:var(--accent-dim)}
+.fly-button:disabled{opacity:.5;cursor:default}
+.fly-button.last{border-color:var(--accent)}
+.fly-button b{font:700 22px var(--display,"Segoe UI"),sans-serif;letter-spacing:.4px}
+.fly-button small{color:var(--muted);font-size:12.5px;line-height:1.4}
+.fly-icon{font-size:20px;color:var(--accent);letter-spacing:-2px}
+.fly-notes ul{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:12.5px}
+.fly-mode h3{margin:14px 0 2px;font-size:13px}
+.fly-mode details{margin-top:12px}
+.fly-mode textarea,.fly-mode input:not([type=checkbox]),#flyDlss input{width:100%;box-sizing:border-box;background:var(--field);color:var(--text);border:1px solid var(--line);border-radius:var(--radius);padding:6px 8px;font:12.5px Consolas,monospace}
+.fly-app{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"on name remove" "path path browse";gap:6px;align-items:center;margin:8px 0;padding-bottom:8px;border-bottom:1px solid var(--line)}
+.fly-app [data-app-field=enabled]{grid-area:on}.fly-app .fly-app-name{grid-area:name}.fly-app .fly-app-path{grid-area:path}.fly-app [data-app-browse]{grid-area:browse}.fly-app [data-app-remove]{grid-area:remove}

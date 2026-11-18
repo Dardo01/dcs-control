@@ -30,3 +30,7 @@ DcsVr.Cli fly vr
 ## Sources for the defaults
 
 Community settings for Quest 3 over Link: [DCS forum, Quest 3 setup](https://forum.dcs.world/topic/368664-most-current-best-path-for-configuring-and-optimizing-meta-quest-3-and-dcs), [OTT settings for Quest 3](https://forum.dcs.world/topic/362712-ott-settings-for-quest3). Oculus Debug Tool settings: [Meta documentation](https://developers.meta.com/horizon/documentation/native/pc/dg-debug-tool/). Launch groups idea: [Blue Runner](https://forum.dcs.world/topic/390118-blue-runner-a-dcs-pre-flight-control-center/). The Oculus Debug Tool command strings and these values are starting points still to be checked on the target PC.
+
+## In the app
+
+The **Volar** page opens first: one big button per mode, what the last launch did, and each mode's settings (DLSS 5 switch, programs, DCS settings, Oculus Debug Tool), the DLSS 5 DLL paths, and a reset to the recommended values. The rail shows only Volar, Overview, Engine, CPU Boost, DCS & headset, Help and Stock DCS; **Mostrar ajustes avanzados** brings back the Pimax, DLSS 5 and Framegen pages. With a Quest 3, choose **Optimizations only** (the page offers it): DCS then uses Quest Link as it is and DCS Control adds only the optimizations.
