@@ -4,8 +4,8 @@ A flight mode is a way to fly with its own DCS settings and programs. Two come b
 
 | Mode | DCS starts with | Before DCS starts | After DCS exits |
 | --- | --- | --- | --- |
-| `2d` · Volar en 2D | `--force_disable_VR` | `VR.enable = false`, DLSS 5 DLL per the mode's switch, TrackIR started | TrackIR closed (only if this launch started it) |
-| `vr` · Volar en VR | `--force_enable_VR` | `VR.enable = true`, `VR.pixel_density = 1`, SSAO off, SSLR off, `preloadRadius = 60000`, Oculus Debug Tool commands (ASW auto, pixel density 1.5) | Oculus Debug Tool after-flight commands (pixel density back to 0) |
+| `2d` · 2D | `--force_disable_VR` | `VR.enable = false`, TrackIR started | TrackIR closed (only if this launch started it) |
+| `vr` · VR | `--force_enable_VR` | `VR.enable = true`, `VR.pixel_density = 1`, SSAO off, SSLR off, `preloadRadius = 60000`, Oculus Debug Tool commands (ASW auto, pixel density 1.5) | Oculus Debug Tool after-flight commands (pixel density back to 0) |
 
 The applied DCS Control profile (Engine Optimizations, CPU Boost, Free VRAM…) is applied first, exactly as Launch DCS does. A setting that profile owns in options.lua is never changed by a mode; settings not present in options.lua are skipped and listed.
 
@@ -15,7 +15,7 @@ The applied DCS Control profile (Engine Optimizations, CPU Boost, Free VRAM…) 
 
 ## DLSS 5 switch
 
-`dlss5.targetPath` is the DLL DCS loads (for example `...\DCSWorld\bin-mt\nvngx_dlss.dll`), `dlss5.replacementPath` the DLL to use instead. A mode with `dlss5: true` copies the replacement over the target; the original is backed up once under `flight-modes\dll-originals` and goes back in a mode with `dlss5: false`.
+`dlss5.targetPath` is the DLL DCS loads (for example `...\DCSWorld\bin-mt\nvngx_dlss.dll`), `dlss5.replacementPath` the DLL to use instead. One switch, `dlss5On`, applies to 2D and VR: on, the replacement is copied over the target before DCS starts; the original is backed up once under `flight-modes\dll-originals` and goes back when the switch is off.
 
 ## Command line
 
@@ -33,4 +33,9 @@ Community settings for Quest 3 over Link: [DCS forum, Quest 3 setup](https://for
 
 ## In the app
 
-The **Volar** page opens first: one big button per mode, what the last launch did, and each mode's settings (DLSS 5 switch, programs, DCS settings, Oculus Debug Tool), the DLSS 5 DLL paths, and a reset to the recommended values. The rail shows only Volar, Overview, Engine, CPU Boost, DCS & headset, Help and Stock DCS; **Mostrar ajustes avanzados** brings back the Pimax, DLSS 5 and Framegen pages. With a Quest 3, choose **Optimizations only** (the page offers it): DCS then uses Quest Link as it is and DCS Control adds only the optimizations.
+The app opens on a simple Spanish page (`ui/inicio.html`):
+
+- **Volar**: choose 2D or VR, the DLSS 5 switch (both modes), and VOLAR. The launch uses Optimizations only (DCS runs with Quest Link or the monitor as it is) plus the chosen optimizations.
+- **Ajustes**: programs that open with DCS per mode, the DLSS 5 DLL paths, the optimizations (Engine Optimizations, CPU Boost, Free VRAM), DCS.exe and options.lua, and under Avanzado the options.lua values and Oculus Debug Tool commands. Changes save by themselves.
+
+The full English interface (`ui/index.html`) is still in the package for the offline verification (smoke.js) but the app window no longer shows it.

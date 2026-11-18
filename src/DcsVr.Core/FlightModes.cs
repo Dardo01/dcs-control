@@ -51,8 +51,6 @@ public sealed record FlightMode
     /// "graphics.visibRange" → "\"High\""). Only settings already in options.lua are changed.</summary>
     public IReadOnlyDictionary<string, string> DcsSettings { get; init; } = new Dictionary<string, string>();
     public IReadOnlyList<CompanionApp> Apps { get; init; } = [];
-    /// <summary>The DLSS 5 DLL in place while flying in this mode (see <see cref="FlightModeSet.Dlss5"/>).</summary>
-    public bool Dlss5 { get; init; }
     public OculusDebugSettings? OculusDebug { get; init; }
     public string LaunchArgument => Kind == FlightKind.Vr ? "--force_enable_VR" : "--force_disable_VR";
 }
@@ -61,12 +59,14 @@ public sealed record FlightModeSet
 {
     public int SchemaVersion { get; init; } = 1;
     public IReadOnlyList<FlightMode> Modes { get; init; } = [];
-    /// <summary>The DLSS 5 DLL each mode turns on or off.</summary>
+    /// <summary>The DLSS 5 DLL the switch on the main page turns on or off, in 2D and in VR.</summary>
     public DllSwap Dlss5 { get; init; } = new();
+    /// <summary>The main page's DLSS 5 switch: the replacement DLL in place for the next flight, whichever the mode.</summary>
+    public bool Dlss5On { get; init; }
     public string LastModeId { get; init; } = "2d";
 
     public FlightMode Get(string id) => Modes.FirstOrDefault(m => m.Id.Equals(id, StringComparison.OrdinalIgnoreCase))
-        ?? throw new InvalidOperationException("No flight mode named " + id + ". Modes: " + string.Join(", ", Modes.Select(m => m.Id)));
+        ?? throw new InvalidOperationException("No existe el modo " + id + ". Modos: " + string.Join(", ", Modes.Select(m => m.Id)));
 
     /// <summary>Starting points from the community research (docs/FLIGHT_MODES.md): edit them to suit the PC.</summary>
     public static FlightModeSet Defaults { get; } = new()
@@ -75,13 +75,13 @@ public sealed record FlightModeSet
         [
             new()
             {
-                Id = "2d", Name = "Volar en 2D", Kind = FlightKind.Desktop, Dlss5 = false,
+                Id = "2d", Name = "2D", Kind = FlightKind.Desktop,
                 DcsSettings = new Dictionary<string, string> { ["VR.enable"] = "false" },
                 Apps = [new() { Name = "TrackIR", Path = @"C:\Program Files (x86)\NaturalPoint\TrackIR5\TrackIR5.exe" }]
             },
             new()
             {
-                Id = "vr", Name = "Volar en VR", Kind = FlightKind.Vr, Dlss5 = false,
+                Id = "vr", Name = "VR", Kind = FlightKind.Vr,
                 DcsSettings = new Dictionary<string, string>
                 {
                     ["VR.enable"] = "true", ["VR.pixel_density"] = "1", ["graphics.SSAO"] = "0", ["graphics.SSLR"] = "false",
@@ -105,7 +105,7 @@ public static class FlightModes
         var path = PathIn(stateRoot);
         if (!File.Exists(path)) return FlightModeSet.Defaults;
         try { return JsonData.Deserialize<FlightModeSet>(File.ReadAllText(path)); }
-        catch (System.Text.Json.JsonException e) { throw new InvalidDataException("The flight modes file cannot be read: " + path + " (" + e.Message + ")", e); }
+        catch (System.Text.Json.JsonException e) { throw new InvalidDataException("No se puede leer el archivo de modos: " + path + " (" + e.Message + ")", e); }
     }
 
     public static void Save(string stateRoot, FlightModeSet set) => AtomicFile.WriteText(PathIn(stateRoot), JsonData.Serialize(set));
@@ -118,10 +118,10 @@ public static class FlightModes
         foreach (var (path, literal) in settings)
         {
             var keys = path.Split('.');
-            if (owned.Contains(path, StringComparer.Ordinal)) { skipped.Add(path + " (set by the applied DCS Control profile)"); continue; }
+            if (owned.Contains(path, StringComparer.Ordinal)) { skipped.Add(path + " (lo controla el perfil aplicado)"); continue; }
             var lua = new LuaOptions(text);
             var current = lua.Get(keys);
-            if (current is null) { skipped.Add(path + " (not in options.lua)"); continue; }
+            if (current is null) { skipped.Add(path + " (no está en options.lua)"); continue; }
             if (LuaOptions.NormalizeLiteral(current) == LuaOptions.NormalizeLiteral(literal)) continue;
             text = lua.SetLiteral(keys, literal); changed.Add(path + " = " + literal);
         }
@@ -133,14 +133,14 @@ public static class FlightModes
     /// the first time the replacement goes in (or a marker that there was none). Returns what changed, or null.</summary>
     public static string? ApplyDllSwap(DllSwap swap, bool on, string backupFolder)
     {
-        if (!swap.IsConfigured) return on ? swap.Name + " is on in this mode, but its DLL is not set up yet." : null;
+        if (!swap.IsConfigured) return on ? "DLSS 5 está activado, pero falta elegir su DLL en Ajustes." : null;
         Directory.CreateDirectory(backupFolder);
         var original = Path.Combine(backupFolder, "original-" + Path.GetFileName(swap.TargetPath));
         var absent = original + ".absent";
         bool Same(string a, string b) => File.Exists(a) && File.Exists(b) && Hashing.FileSha256(a) == Hashing.FileSha256(b);
         if (on)
         {
-            if (!File.Exists(swap.ReplacementPath)) throw new FileNotFoundException(swap.Name + " DLL not found: " + swap.ReplacementPath);
+            if (!File.Exists(swap.ReplacementPath)) throw new FileNotFoundException("No se encuentra el DLL de DLSS 5: " + swap.ReplacementPath);
             if (Same(swap.TargetPath, swap.ReplacementPath)) return null;
             if (!File.Exists(original) && !File.Exists(absent))
             {
@@ -149,18 +149,18 @@ public static class FlightModes
             }
             Directory.CreateDirectory(Path.GetDirectoryName(swap.TargetPath)!);
             File.Copy(swap.ReplacementPath, swap.TargetPath, true);
-            return swap.Name + " on.";
+            return "DLSS 5 activado.";
         }
         if (File.Exists(original))
         {
             if (Same(swap.TargetPath, original)) return null;
             File.Copy(original, swap.TargetPath, true);
-            return swap.Name + " off (original DLL back).";
+            return "DLSS 5 desactivado (vuelve el DLL original).";
         }
         if (File.Exists(absent) && File.Exists(swap.TargetPath) && Same(swap.TargetPath, swap.ReplacementPath))
         {
             File.Delete(swap.TargetPath);
-            return swap.Name + " off.";
+            return "DLSS 5 desactivado.";
         }
         return null;
     }
@@ -186,13 +186,13 @@ public static class FlightModes
     {
         if (!settings.Enabled || commands.Count == 0) return null;
         var cli = FindOculusCli(settings);
-        if (cli is null) return "OculusDebugToolCLI.exe was not found; set its path in the VR mode.";
+        if (cli is null) return "no se encuentra OculusDebugToolCLI.exe; indica su ruta en Ajustes.";
         Directory.CreateDirectory(scratchFolder);
         var script = Path.Combine(scratchFolder, "oculus-debug-commands.txt");
         AtomicFile.WriteText(script, OculusScript(commands));
         using var process = Process.Start(new ProcessStartInfo(cli) { ArgumentList = { "-f", script }, UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(cli)! });
-        if (process is null) return "OculusDebugToolCLI.exe did not start.";
-        if (!process.WaitForExit(TimeSpan.FromSeconds(15))) { try { process.Kill(); } catch (InvalidOperationException) { } return "OculusDebugToolCLI.exe did not finish in 15 seconds."; }
+        if (process is null) return "OculusDebugToolCLI.exe no arrancó.";
+        if (!process.WaitForExit(TimeSpan.FromSeconds(15))) { try { process.Kill(); } catch (InvalidOperationException) { } return "OculusDebugToolCLI.exe no terminó en 15 segundos."; }
         return null;
     }
 
@@ -224,23 +224,23 @@ public sealed class FlightSession(FlightMode mode, string scratchFolder)
         if (optionsPath is not null && File.Exists(optionsPath) && Mode.DcsSettings.Count > 0)
         {
             var (text, changed, skipped) = FlightModes.PatchOptions(File.ReadAllText(optionsPath), Mode.DcsSettings, ownedSettings);
-            if (changed.Count > 0) { AtomicFile.WriteText(optionsPath, text); Notes.Add("DCS settings: " + string.Join(", ", changed) + "."); }
-            if (skipped.Count > 0) Notes.Add("Not changed: " + string.Join(", ", skipped) + ".");
+            if (changed.Count > 0) { AtomicFile.WriteText(optionsPath, text); Notes.Add("Ajustes de DCS: " + string.Join(", ", changed) + "."); }
+            if (skipped.Count > 0) Notes.Add("Sin cambiar: " + string.Join(", ", skipped) + ".");
         }
-        if (FlightModes.ApplyDllSwap(set.Dlss5, Mode.Dlss5, backupFolder) is { } dll) Notes.Add(dll);
+        if (FlightModes.ApplyDllSwap(set.Dlss5, set.Dlss5On, backupFolder) is { } dll) Notes.Add(dll);
         if (Mode.OculusDebug is { } odt && FlightModes.RunOculus(odt, odt.BeforeFlight, scratchFolder) is { } problem) Notes.Add("Oculus Debug Tool: " + problem);
         foreach (var app in Mode.Apps.Where(a => a.Enabled && !string.IsNullOrWhiteSpace(a.Path)))
         {
-            if (!File.Exists(app.Path)) { Notes.Add(app.Name + " was not found at " + app.Path + "."); continue; }
-            if (FlightModes.IsRunning(app.Path)) { Notes.Add(app.Name + " was already running."); continue; }
+            if (!File.Exists(app.Path)) { Notes.Add("No se encuentra " + app.Name + " en " + app.Path + "."); continue; }
+            if (FlightModes.IsRunning(app.Path)) { Notes.Add(app.Name + " ya estaba abierto."); continue; }
             try
             {
                 var process = FlightModes.StartApp(app);
                 if (process is not null) _started.Add((app, process));
-                Notes.Add(app.Name + " started.");
+                Notes.Add(app.Name + " abierto.");
                 if (app.DelaySeconds > 0) FlightModes.Delay(TimeSpan.FromSeconds(app.DelaySeconds));
             }
-            catch (System.ComponentModel.Win32Exception e) { Notes.Add(app.Name + " could not start: " + e.Message); }
+            catch (System.ComponentModel.Win32Exception e) { Notes.Add(app.Name + " no se pudo abrir: " + e.Message); }
         }
     }
 
@@ -263,9 +263,9 @@ public sealed class FlightSession(FlightMode mode, string scratchFolder)
                     if (process.HasExited) continue;
                     process.CloseMainWindow();
                     if (!process.WaitForExit(TimeSpan.FromSeconds(5))) process.Kill(true);
-                    notes.Add(app.Name + " closed.");
+                    notes.Add(app.Name + " cerrado.");
                 }
-                catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { notes.Add(app.Name + " could not be closed: " + e.Message); }
+                catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception) { notes.Add(app.Name + " no se pudo cerrar: " + e.Message); }
             }
         }
         _started.Clear();

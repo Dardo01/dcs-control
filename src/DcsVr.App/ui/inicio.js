@@ -1,0 +1,166 @@
+'use strict';
+/* DCS Control, interfaz sencilla: Volar (2D o VR, DLSS 5, VOLAR) y Ajustes (programas, DLSS 5, optimización, DCS). */
+const $ = id => document.getElementById(id);
+const escape = v => String(v ?? '').replace(/[&<>"']/g,c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let view = null, busy = false, sequence = 0, saveTimer = null;
+const pending = new Map();
+
+function request(action, data = {}) {
+  return new Promise((resolve,reject) => {
+    if (!window.chrome?.webview) { reject(new Error('Abre esta página desde DCS Control.')); return; }
+    const id = String(++sequence);
+    pending.set(id,{resolve,reject}); window.chrome.webview.postMessage({id,action,data});
+  });
+}
+window.chrome?.webview?.addEventListener('message',e => {
+  const item = pending.get(e.data.id); if (!item) return; pending.delete(e.data.id);
+  e.data.ok ? item.resolve(e.data.data) : item.reject(new Error(e.data.error));
+});
+let toastTimer;
+function showError(error) { $('toast').textContent = error.message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true,9000); }
+
+const lines = text => String(text || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+const luaText = settings => Object.entries(settings || {}).map(([k,v]) => k+' = '+v).join('\n');
+function parseLua(text) {
+  const result = {};
+  for (const line of lines(text)) {
+    const at = line.indexOf('=');
+    if (at < 1) throw new Error('Cada ajuste va en una línea "ruta = valor": '+line);
+    result[line.slice(0,at).trim()] = line.slice(at+1).trim();
+  }
+  return result;
+}
+const mode = id => view.set.modes.find(m => m.id === id);
+const fileName = path => String(path || '').split('\\').pop();
+
+/* ---------- Volar ---------- */
+function renderVolar() {
+  const set = view.set, selected = set.lastModeId;
+  document.querySelectorAll('.mode').forEach(b => {
+    b.setAttribute('aria-checked',String(b.dataset.mode === selected));
+    const m = mode(b.dataset.mode), apps = (m?.apps || []).filter(a => a.enabled).map(a => a.name);
+    b.querySelector('.apps').textContent = apps.length ? 'Abre '+apps.join(', ') : '';
+  });
+  $('dlss5').checked = Boolean(set.dlss5On);
+  const configured = set.dlss5?.targetPath && set.dlss5?.replacementPath;
+  $('dlssState').textContent = !configured ? (set.dlss5On ? 'Activado, pero falta elegir el DLL en Ajustes' : 'Desactivado · elige el DLL en Ajustes')
+    : set.dlss5On ? 'Activado en 2D y en VR' : 'Desactivado';
+  $('fly').disabled = busy || view.dcsRunning;
+  $('fly').textContent = view.dcsRunning ? 'DCS EN MARCHA' : busy ? 'INICIANDO…' : 'VOLAR';
+  $('notes').innerHTML = (view.notes || []).map(n => '<li>'+escape(n)+'</li>').join('');
+}
+
+async function fly() {
+  if (busy) return;
+  busy = true; $('status').classList.remove('error'); $('status').textContent = 'Preparando DCS…'; renderVolar();
+  try { await flushSave(); view = await request('fly',{mode:view.set.lastModeId}); $('status').textContent = ''; }
+  catch (error) { $('status').classList.add('error'); $('status').textContent = error.message; }
+  finally { busy = false; renderVolar(); }
+}
+
+/* ---------- Ajustes ---------- */
+function renderAjustes() {
+  const set = view.set;
+  $('apps').innerHTML = set.modes.map(m => `<div class="group" data-mode="${escape(m.id)}"><h3>En ${escape(m.name)}</h3>
+    ${(m.apps || []).map((a,i) => `<div class="app" data-index="${i}">
+      <input type="checkbox" data-app="enabled" ${a.enabled ? 'checked' : ''} title="Abrir con DCS">
+      <div><div class="name">${escape(a.name)}</div><div class="where" title="${escape(a.path)}">${escape(a.path)}</div></div>
+      <button class="small" data-app="change">Cambiar…</button><button class="icon" data-app="remove" title="Quitar">✕</button></div>`).join('') || '<p>Ninguno.</p>'}
+    <button class="small" data-app="add">Añadir programa…</button></div>`).join('');
+  $('dllTarget').value = set.dlss5?.targetPath || ''; $('dllReplacement').value = set.dlss5?.replacementPath || '';
+  $('optEngine').checked = view.optimizations.engineOptimizations; $('optBoost').checked = view.optimizations.cpuBoost; $('optVram').checked = view.optimizations.freeVram;
+  $('dcsPath').value = view.dcs || ''; $('optionsPath').value = view.options || '';
+  $('lua2d').value = luaText(mode('2d')?.dcsSettings); $('luavr').value = luaText(mode('vr')?.dcsSettings);
+  const odt = mode('vr')?.oculusDebug || {};
+  $('odtOn').checked = Boolean(odt.enabled); $('odtBefore').value = (odt.beforeFlight || []).join('\n'); $('odtAfter').value = (odt.afterFlight || []).join('\n'); $('odtPath').value = odt.cliPath || '';
+}
+
+/** The settings fields back into view.set (the programs are changed in place by their buttons). */
+function readAjustes() {
+  const set = view.set;
+  set.dlss5 = {...(set.dlss5 || {}), targetPath: $('dllTarget').value.trim(), replacementPath: $('dllReplacement').value.trim()};
+  set.modes = set.modes.map(m => {
+    const next = {...m};
+    if (m.id === '2d') next.dcsSettings = parseLua($('lua2d').value);
+    if (m.id === 'vr') { next.dcsSettings = parseLua($('luavr').value);
+      next.oculusDebug = {...(m.oculusDebug || {}), enabled: $('odtOn').checked, beforeFlight: lines($('odtBefore').value), afterFlight: lines($('odtAfter').value), cliPath: $('odtPath').value.trim()}; }
+    return next;
+  });
+}
+
+async function save() {
+  clearTimeout(saveTimer); saveTimer = null;
+  const payload = {set: view.set, optimizations: {engineOptimizations: $('optEngine').checked, cpuBoost: $('optBoost').checked, freeVram: $('optVram').checked},
+    dcs: $('dcsPath').value.trim(), options: $('optionsPath').value.trim()};
+  view = await request('simpleSave',payload);
+  $('saved').textContent = 'Guardado';
+  setTimeout(() => $('saved').textContent = '',2500);
+  renderVolar();
+}
+function saveSoon() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => { try { readAjustes(); save().catch(showError); } catch (error) { showError(error); } },700);
+}
+async function flushSave() { if (saveTimer) { readAjustes(); await save(); } }
+
+async function browse(target) {
+  const kind = {dcsPath:'dcs', optionsPath:'options', dllTarget:'dll', dllReplacement:'dll', odtPath:'program'}[target] || 'program';
+  const picked = await request('browse',{target:kind});
+  return picked?.path || null;
+}
+
+/* ---------- Arranque ---------- */
+function showTab(tab) {
+  document.querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected',String(b.dataset.tab === tab)));
+  $('volar').hidden = tab !== 'volar'; $('ajustes').hidden = tab !== 'ajustes';
+  if (tab === 'volar') flushSave().catch(showError);
+}
+
+async function load(rescan) {
+  try { view = await request('simpleState',{rescan: Boolean(rescan)}); renderVolar(); renderAjustes(); }
+  catch (error) { $('status').classList.add('error'); $('status').textContent = error.message; }
+}
+
+function setup() {
+  document.querySelectorAll('[data-tab]').forEach(b => b.addEventListener('click',() => showTab(b.dataset.tab)));
+  document.querySelectorAll('[data-window]').forEach(b => b.addEventListener('click',() => request('window',{op:b.dataset.window}).catch(showError)));
+  document.querySelectorAll('.mode').forEach(b => b.addEventListener('click',() => {
+    if (!view || busy) return; view.set.lastModeId = b.dataset.mode; renderVolar(); save().catch(showError);
+  }));
+  $('dlss5').addEventListener('change',e => { if (!view) return; view.set.dlss5On = e.target.checked; renderVolar(); save().catch(showError); });
+  $('fly').addEventListener('click',fly);
+
+  $('ajustes').addEventListener('input',e => { if (e.target.closest('.app') || e.target.type === 'checkbox') return; saveSoon(); });
+  $('ajustes').addEventListener('click',async e => {
+    const button = e.target.closest('button'); if (!button || !view) return;
+    try {
+      if (button.dataset.browse) { const path = await browse(button.dataset.browse); if (path) { $(button.dataset.browse).value = path; readAjustes(); await save(); } return; }
+      if (button.id === 'reset') { view = await request('simpleReset'); renderVolar(); renderAjustes(); return; }
+      const group = button.closest('.group'); if (!group) return;
+      const m = mode(group.dataset.mode), row = button.closest('.app'), index = row ? Number(row.dataset.index) : -1;
+      if (button.dataset.app === 'add' || button.dataset.app === 'change') {
+        const path = await browse('program'); if (!path) return;
+        const app = {name: fileName(path).replace(/\.exe$/i,''), path, enabled: true, closeOnExit: true, delaySeconds: 2};
+        m.apps = button.dataset.app === 'add' ? [...(m.apps || []), app] : m.apps.map((a,i) => i === index ? {...a, name: app.name, path} : a);
+      }
+      if (button.dataset.app === 'remove') m.apps = m.apps.filter((_,i) => i !== index);
+      readAjustes(); await save(); renderAjustes();
+    } catch (error) { showError(error); }
+  });
+  $('ajustes').addEventListener('change',e => {
+    if (!view) return;
+    if (e.target.dataset.app === 'enabled') {
+      const m = mode(e.target.closest('.group').dataset.mode), index = Number(e.target.closest('.app').dataset.index);
+      m.apps = m.apps.map((a,i) => i === index ? {...a, enabled: e.target.checked} : a);
+      readAjustes(); save().catch(showError); return;
+    }
+    if (e.target.type === 'checkbox') { try { readAjustes(); save().catch(showError); } catch (error) { showError(error); } }
+  });
+  // DCS started or closed: the VOLAR button follows.
+  setInterval(async () => {
+    if (busy || !view || document.hidden) return;
+    try { const s = await request('dcsStatus'); if (s.dcsRunning !== view.dcsRunning) { view.dcsRunning = s.dcsRunning; if (!s.dcsRunning) view = await request('simpleState'); renderVolar(); } } catch {}
+  },4000);
+  load(false);
+}
+setup();

@@ -1,7 +1,6 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const pages = [
-  ['fly','Volar','Elige cómo volar: en el monitor con TrackIR o con las Quest 3. Cada modo pone sus ajustes y abre sus programas.','2D o VR con un clic','M2.5 13.5 21 6l-4.5 13-4-5.5-6 1.5Z M12.5 13.5 21 6'],
   ['overview','Overview','What runs when you press Launch DCS, and how your last flight went.','Status at a glance','M3.5 16.5a8.5 8.5 0 1 1 17 0 M12 16.5l4.2-5.8 M6.3 11.4l1.1.7 M12 8.2v1.3 M17.7 11.4l-1.1.7 M13.3 16.5a1.3 1.3 0 1 1-2.6 0 1.3 1.3 0 0 1 2.6 0Z M5 20h14'],
   ['guide','Feature guide','What each feature does, what to expect from it and what it costs, at a glance.','What to expect','M5 4h10l4 4v12H5Z M15 4v4h4 M8 12h8 M8 15.5h8 M8 9h4'],
   ['engine','Engine Optimizations','Makes DCS itself lighter on the CPU, on a monitor or in VR: more FPS, the same image.','CPU work inside DCS','M12 8.8a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4Z M12 3v2.6 M12 18.4V21 M3 12h2.6 M18.4 12H21 M5.6 5.6l1.9 1.9 M16.5 16.5l1.9 1.9 M5.6 18.4l1.9-1.9 M16.5 7.5l1.9-1.9','Engine'],
@@ -19,15 +18,6 @@ const pages = [
 ];
 /** Pages of the VR features, hidden in Optimizations only (no VR). */
 const VR_PAGES = ['foveation','dlss','framegen','pupil','visual'];
-/** Pages shown in the simple interface; the rest appear with "Show advanced settings" on the Fly page. */
-const SIMPLE_PAGES = ['fly','overview','engine','boost','setup','support','recovery'];
-let advancedPages = false; try { advancedPages = localStorage.getItem('advancedPages') === '1'; } catch {}
-const pageShown = id => (advancedPages || SIMPLE_PAGES.includes(id)) && !(profile?.desktop && VR_PAGES.includes(id));
-function applyRail() {
-  pages.forEach(p => { const b = $('nav-'+p[0]); if (b) b.hidden = !pageShown(p[0]); });
-  const fov = $('railGroup-foveation'); if (fov) fov.hidden = !pageShown('foveation');
-  if (page && !pageShown(page)) navigate('fly');
-}
 /** Ctrl shortcuts by page, fixed so pilots keep them when the rail order changes. */
 const PAGE_KEYS = {overview:['Ctrl','1'],guide:['Ctrl','2'],engine:['Ctrl','3'],boost:['Ctrl','4'],foveation:['Ctrl','5'],dlss:['Ctrl','6'],framegen:['Ctrl','7'],pupil:['Ctrl','8'],visual:['Ctrl','9'],osd:['Ctrl','0'],diagnostics:['Ctrl','Shift','C']};
 // The feature checklist in the right panel; each feature has its own page. First what every pilot can use (monitor or any
@@ -47,7 +37,7 @@ const pending = new Map(), fields = [], invalid = new Set();
 const clone = value => JSON.parse(JSON.stringify(value));
 let pendingDxgiAction = null;
 const dxgiAcknowledged = dxgi => { try { return localStorage.getItem('dxgiAck:'+dxgi.sha256) === '1'; } catch { return false; } };
-const NO_TIMEOUT = new Set(['fly','browse','save','import','export','importSboys','prepareSboys','diagnosticPackage','launch','apply','restore','grantWriteAccess','resumeTobii','updateInstall']);
+const NO_TIMEOUT = new Set(['browse','save','import','export','importSboys','prepareSboys','diagnosticPackage','launch','apply','restore','grantWriteAccess','resumeTobii','updateInstall']);
 const escape = value => String(value ?? '').replace(/[&<>"']/g,c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const empty = value => value.trim() || null;
 const num = value => String(Number(Number(value).toFixed(4)));
@@ -954,7 +944,7 @@ function buildFeatureList() {
 }
 function navigate(id) {
   // The VR pages are hidden with Optimizations only: whatever leads there (Ctrl+number, a link, search) opens the overview.
-  if (!pageShown(id)) id = SIMPLE_PAGES.includes(id) ? 'overview' : 'fly';
+  if (profile?.desktop && VR_PAGES.includes(id)) id = 'overview';
   const entry = pages.find(p => p[0] === id); if (!entry) return; page = id;
   pages.forEach(p => { $('page-'+p[0]).hidden = p[0] !== id; $('nav-'+p[0]).classList.toggle('selected',p[0] === id); $('nav-'+p[0]).setAttribute('aria-current',p[0] === id ? 'page' : 'false'); });
   $('pageTitle').textContent = entry[1]; $('pageDescription').textContent = entry[2]; $('scrollArea').scrollTop = 0;
@@ -966,7 +956,6 @@ function navigate(id) {
   if (id === 'visual' && profile) renderVisualNeeds();
   if (id === 'support' && profile) refreshDlssFocus();
   if (id === 'guide') renderGuide();
-  if (id === 'fly') window.renderFly?.();
   if (id === 'overview' && profile) loadFlight();
 }
 // ---- Pimax Play focus values ------------------------------------------------------------------------------------
@@ -1372,9 +1361,9 @@ function updateControls() {
   $('routeLive').textContent = profile.desktop ? 'Another headset or a monitor: DCS runs as you set it up, with Engine Optimizations, CPU Boost and Free VRAM.' : state?.activeRoute?.summary || '';
   $('routeLive').classList.toggle('mismatch', !profile.desktop && Boolean(live) && live !== profile.runtime);
   // The VR feature pages are hidden without a headset; an open one goes back to the overview.
-  applyRail(); $('headsetPanelAlways').hidden = Boolean(profile.desktop) || profile.frameGen === 'Off';
+  VR_PAGES.forEach(id => $('nav-'+id).hidden = Boolean(profile.desktop)); $('railGroup-foveation').hidden = Boolean(profile.desktop); $('headsetPanelAlways').hidden = Boolean(profile.desktop) || profile.frameGen === 'Off';
   renderAlsoOn(); $('dlssFocusCard').hidden = Boolean(profile.desktop) || !profile.neuralRendering;
-  if (!pageShown(page)) navigate('overview');
+  if (profile.desktop && VR_PAGES.includes(page)) navigate('overview');
   // The Sboys driver is only needed on the Sboys route.
   $('sboysCard').hidden = profile.runtime !== 'SboysSteamVr' || Boolean(profile.desktop);
   $('headsetControls').hidden = Boolean(profile.desktop);
@@ -1778,7 +1767,7 @@ function renderSearch() {
     ['recovery','Stock DCS','Back to stock DCS: put back every file and setting DCS Control changed.','originals'],
     ['guide','Feature guide','What each feature does, what to expect from it and what it costs.','featureGuide']
   ].map(([page,title,description,id]) => ({page,title,description,path:id,element:$(id),input:$(id)}));
-  searchResults = [...fields,...shortcuts].filter(f => (!f.page || pageShown(f.page)) && !hiddenOnPage(f)).filter(f => !query || normalize(plainTitle(f.title)+' '+f.description+' '+(f.detail || '')+' '+f.path+' '+pages.find(p => p[0] === f.page).slice(1,4).join(' ')+' '+(PAGE_ALIASES[f.page] || '')).includes(query));
+  searchResults = [...fields,...shortcuts].filter(f => !(profile?.desktop && VR_PAGES.includes(f.page)) && !hiddenOnPage(f)).filter(f => !query || normalize(plainTitle(f.title)+' '+f.description+' '+(f.detail || '')+' '+f.path+' '+pages.find(p => p[0] === f.page).slice(1,4).join(' ')+' '+(PAGE_ALIASES[f.page] || '')).includes(query));
   $('searchResults').innerHTML = searchResults.length ? searchResults.map((f,index) => `<button class="search-result" data-index="${index}"><div><b>${escape(plainTitle(f.title))}</b><small>${escape(f.description)}</small></div><span>${f.path === 'featureList' ? 'Right panel' : pages.find(p => p[0] === f.page)[1]} ›</span></button>`).join('') : '<div class="empty-state"><p>No settings match this search.</p></div>';
   $('searchResults').querySelectorAll('button').forEach(b => b.addEventListener('click',() => revealSetting(searchResults[Number(b.dataset.index)])));
 }
@@ -2087,9 +2076,9 @@ function initializeUpdates() {
   $('updateAuto').addEventListener('change',e => setUpdateChecks(e.target.checked));
 }
 async function initialize() {
-  const groups = {fly:'Volar',overview:'Status',engine:'Every pilot',foveation:'VR',setup:'Before you fly',support:'If something goes wrong'};
+  const groups = {engine:'Every pilot',foveation:'VR',setup:'Before you fly',support:'If something goes wrong'};
   pages.forEach(p => { if (groups[p[0]]) { const g = document.createElement('div'); g.className = 'rail-group'; g.id = 'railGroup-'+p[0]; g.textContent = groups[p[0]]; $('navigation').append(g); } const b = document.createElement('button'); b.id = 'nav-'+p[0]; b.className = 'nav-item'; b.title = PAGE_KEYS[p[0]] ? p[1]+' ('+PAGE_KEYS[p[0]].join(' ')+')' : p[1]; if (PAGE_KEYS[p[0]]) b.setAttribute('aria-keyshortcuts',PAGE_KEYS[p[0]].join('+').replace('Ctrl','Control')); b.setAttribute('aria-label',p[1]); b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${p[4]}"/></svg><div><b>${p[5] || p[1]}</b><small>${p[3]}</small></div>`; b.addEventListener('click',() => navigate(p[0])); $('navigation').append(b); });
-  buildFields(); buildFeatureList(); nameMoreButtons(); applyRail(); navigate('fly');
+  buildFields(); buildFeatureList(); nameMoreButtons(); navigate('overview');
   // Launch and Apply ask once before setting another program's dxgi.dll aside (ReShade, an overlay).
   // The page is busy from the click on, so a double click launches once and nothing waits on an idle page in between.
   ['launch','apply'].forEach(id => $(id).addEventListener('click',async () => {

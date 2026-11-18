@@ -125,8 +125,8 @@ try
             var path = FlightModes.PathIn(service.StateRoot);
             if (!File.Exists(path)) FlightModes.Save(service.StateRoot, FlightModeSet.Defaults);
             var set = FlightModes.Load(service.StateRoot);
-            foreach (var m in set.Modes) Console.WriteLine($"{m.Id}: {m.Name} ({m.Kind}, DLSS 5 {(m.Dlss5 ? "on" : "off")}, {m.Apps.Count(a => a.Enabled)} programs)");
-            Console.WriteLine("Edit: " + path); break;
+            foreach (var m in set.Modes) Console.WriteLine($"{m.Id}: {m.Name} ({m.Kind}, {m.Apps.Count(a => a.Enabled)} programs)");
+            Console.WriteLine("DLSS 5: " + (set.Dlss5On ? "on" : "off")); Console.WriteLine("Edit: " + path); break;
         }
         case "fly":
         {

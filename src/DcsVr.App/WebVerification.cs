@@ -309,7 +309,7 @@ internal static class WebVerification
             core.NavigationCompleted += (_,e) => { if (e.IsSuccess) ready.TrySetResult(true); else ready.TrySetException(new IOException("Web navigation failed: "+e.WebErrorStatus)); };
             // Motion follows Windows' setting; the verification renders as with animations off.
             await core.CallDevToolsProtocolMethodAsync("Emulation.setEmulatedMedia", "{\"features\":[{\"name\":\"prefers-reduced-motion\",\"value\":\"reduce\"}]}");
-            core.Navigate(WebHost.Address); await ready.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            core.Navigate(WebHost.ClassicAddress); await ready.Task.WaitAsync(TimeSpan.FromSeconds(30));
             Log("Navigation completed");
             for (var attempt = 0; attempt < 500 && await core.ExecuteScriptAsync("Boolean(window.uiReady)") != "true"; attempt++) await Task.Delay(20);
             if (await core.ExecuteScriptAsync("Boolean(window.uiReady)") != "true") throw new IOException("The web interface did not connect to the .NET bridge.");

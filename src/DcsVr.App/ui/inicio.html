@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+  <title>DCS Control</title><link rel="icon" type="image/svg+xml" href="app-icon.svg"><link rel="stylesheet" href="inicio.css"><script src="inicio.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="brand-icon.svg" width="28" height="28" alt="" aria-hidden="true"><span>DCS <b>CONTROL</b></span></div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-volar" data-tab="volar" aria-selected="true">Volar</button>
+    <button role="tab" id="tab-ajustes" data-tab="ajustes" aria-selected="false">Ajustes</button>
+  </nav>
+  <div class="window-controls" role="group" aria-label="Ventana">
+    <button type="button" data-window="minimize" aria-label="Minimizar" title="Minimizar"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5.5H9"/></svg></button>
+    <button type="button" data-window="maximize" aria-label="Maximizar" title="Maximizar"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5H8.5V8.5H1.5Z"/></svg></button>
+    <button type="button" data-window="close" class="close" aria-label="Cerrar" title="Cerrar"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5 8.5 8.5M8.5 1.5 1.5 8.5"/></svg></button>
+  </div>
+</header>
+
+<main>
+  <section id="volar" class="view">
+    <div class="center">
+      <h1>¿Cómo vas a volar?</h1>
+      <div class="choice" role="radiogroup" aria-label="Modo">
+        <button role="radio" class="mode" data-mode="2d" aria-checked="true">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="6" y="9" width="36" height="23" rx="2"/><path d="M18 39h12M24 32v7"/></svg>
+          <b>2D</b><small>Monitor</small><span class="apps" data-apps="2d"></span>
+        </button>
+        <button role="radio" class="mode" data-mode="vr" aria-checked="false">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><path d="M7 17h34a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3h-9l-4-5h-8l-4 5H7a3 3 0 0 1-3-3V20a3 3 0 0 1 3-3Z"/></svg>
+          <b>VR</b><small>Meta Quest 3</small><span class="apps" data-apps="vr"></span>
+        </button>
+      </div>
+      <label class="dlss">
+        <span><b>DLSS 5</b><small id="dlssState">Desactivado</small></span>
+        <input type="checkbox" id="dlss5" role="switch"><i aria-hidden="true"></i>
+      </label>
+      <button id="fly" class="fly">VOLAR</button>
+      <p id="status" class="status" aria-live="polite"></p>
+      <ul id="notes" class="notes"></ul>
+    </div>
+  </section>
+
+  <section id="ajustes" class="view" hidden>
+    <div class="settings">
+      <div class="card">
+        <h2>Programas que se abren solos</h2>
+        <p>Se abren antes que DCS y se cierran al salir de DCS (si los abrió la app).</p>
+        <div id="apps"></div>
+      </div>
+
+      <div class="card">
+        <h2>DLSS 5</h2>
+        <p>Con DLSS 5 activado, tu DLL sustituye al de DCS. Al desactivarlo vuelve el original (se guarda una copia la primera vez).</p>
+        <label class="path">DLL que usa DCS<span><input id="dllTarget" placeholder="…\DCSWorld\bin-mt\nvngx_dlss.dll"><button class="small" data-browse="dllTarget">Buscar…</button></span></label>
+        <label class="path">Tu DLL de DLSS 5<span><input id="dllReplacement" placeholder="…\nvngx_dlss.dll"><button class="small" data-browse="dllReplacement">Buscar…</button></span></label>
+      </div>
+
+      <div class="card">
+        <h2>Optimización</h2>
+        <label class="row"><span><b>Optimizaciones del motor</b><small>Quitan trabajo a la CPU dentro de DCS sin cambiar la imagen. Más FPS.</small></span><input type="checkbox" id="optEngine" role="switch"><i aria-hidden="true"></i></label>
+        <label class="row"><span><b>Prioridad de CPU</b><small>DCS usa los mejores núcleos y tiene prioridad mientras vuelas.</small></span><input type="checkbox" id="optBoost" role="switch"><i aria-hidden="true"></i></label>
+        <label class="row"><span><b>Liberar memoria de vídeo</b><small>Cierra programas que gastan VRAM antes de volar y los vuelve a abrir después.</small></span><input type="checkbox" id="optVram" role="switch"><i aria-hidden="true"></i></label>
+      </div>
+
+      <div class="card">
+        <h2>DCS</h2>
+        <label class="path">DCS.exe<span><input id="dcsPath"><button class="small" data-browse="dcsPath">Buscar…</button></span></label>
+        <label class="path">options.lua (Saved Games\DCS\Config)<span><input id="optionsPath"><button class="small" data-browse="optionsPath">Buscar…</button></span></label>
+      </div>
+
+      <details class="card">
+        <summary><h2>Avanzado</h2></summary>
+        <p>Ajustes de DCS que se escriben antes de volar en cada modo. Una línea por ajuste: <code>ruta = valor</code>.</p>
+        <div class="two">
+          <label>2D<textarea id="lua2d" rows="7" spellcheck="false"></textarea></label>
+          <label>VR<textarea id="luavr" rows="7" spellcheck="false"></textarea></label>
+        </div>
+        <h3>Oculus Debug Tool (VR)</h3>
+        <label class="row"><span><b>Aplicar comandos de Oculus Debug Tool</b></span><input type="checkbox" id="odtOn" role="switch"><i aria-hidden="true"></i></label>
+        <div class="two">
+          <label>Antes de volar<textarea id="odtBefore" rows="3" spellcheck="false"></textarea></label>
+          <label>Al salir<textarea id="odtAfter" rows="3" spellcheck="false"></textarea></label>
+        </div>
+        <label class="path">OculusDebugToolCLI.exe (vacío: se busca solo)<span><input id="odtPath"><button class="small" data-browse="odtPath">Buscar…</button></span></label>
+        <button id="reset" class="small">Volver a los valores recomendados</button>
+      </details>
+      <p id="saved" class="saved" aria-live="polite"></p>
+    </div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden></div>
+</body>
+</html>

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
-  <title>DCS Control</title><link rel="icon" type="image/svg+xml" href="app-icon.svg"><link rel="stylesheet" href="app.css"><link rel="stylesheet" href="theme.css"><script src="app.js" defer></script><script src="setup.js" defer></script><script src="fly.js" defer></script>
+  <title>DCS Control</title><link rel="icon" type="image/svg+xml" href="app-icon.svg"><link rel="stylesheet" href="app.css"><link rel="stylesheet" href="theme.css"><script src="app.js" defer></script><script src="setup.js" defer></script>
 </head>
 <body>
 <div id="shell">
@@ -16,18 +16,6 @@
   <div class="workspace">
     <header class="page-heading"><div><h1 id="pageTitle">Overview</h1><p id="pageDescription"></p></div></header>
     <div id="scrollArea" tabindex="-1"><main id="pages">
-      <section id="page-fly" class="page" hidden>
-        <div class="fly-buttons" id="flyButtons"></div>
-        <div class="card fly-notes" id="flyNotes" hidden></div>
-        <div class="pimax-note warn" id="flyDesktopNote" hidden>Con las Quest 3 no hacen falta Quad Views ni el resto de funciones de Pimax: elige <b>Solo optimizaciones</b> para que DCS use Quest Link tal cual y la app añada solo las optimizaciones. <button class="button secondary" id="flyUseDesktop">Usar Solo optimizaciones</button></div>
-        <div class="two-column"><div id="flyModes"></div><div>
-          <div class="card" id="flyDlss"></div>
-          <div class="card"><div class="card-heading"><div><h2>Guardar</h2><p class="fine">Los cambios de esta página se guardan aquí, no con el perfil.</p></div></div>
-            <div class="inline-actions"><button class="button" id="flySave">Guardar modos</button><button class="button secondary" id="flyReset">Volver a los valores recomendados</button></div></div>
-          <div class="card"><div class="card-heading"><div><h2>Interfaz</h2><p class="fine">La vista sencilla muestra solo lo que usas con monitor y Quest 3.</p></div></div>
-            <label class="switch-row"><input type="checkbox" id="flyAdvanced"> Mostrar ajustes avanzados (Pimax, DLSS 5, Framegen…)</label></div>
-        </div></div>
-      </section>
       <section id="page-overview" class="page" aria-labelledby="pageTitle">
         <div class="update-banner" id="updateBanner" role="status" hidden><span class="update-dot" aria-hidden="true"></span><span id="updateBannerText"></span><span class="update-links"><button id="updateNotesOpen" class="link-button">What's new</button><span aria-hidden="true">·</span><button id="updateOpen" class="link-button">Update</button></span><button id="updateHide" class="icon-button" aria-label="Hide until DCS Control starts again" title="Hide until DCS Control starts again">×</button></div>
         <div class="update-banner support-banner" id="supportBanner" role="status" hidden><span class="update-dot" aria-hidden="true"></span><span id="supportBannerText">DCS Control is free. If it makes your flights better, you can buy me a coffee.</span><span class="update-links"><button id="supportOpen" class="link-button">Ko-fi</button><span aria-hidden="true">·</span><button id="supportOff" class="link-button">Don't show again</button></span><button id="supportHide" class="icon-button" aria-label="Close" title="Close">×</button></div>

@@ -114,7 +114,7 @@ Test("Flight modes: programs start once, an already running one is left alone, a
         var session = new FlightSession(mode, Path.Combine(root, "flight-apps/scratch"));
         session.Begin(new FlightModeSet(), null, [], Path.Combine(root, "flight-apps/backup"));
         Require(started.SequenceEqual(["TrackIR"]), string.Join(",", started));
-        Require(session.Notes.Any(n => n.Contains("already running")) && session.Notes.Any(n => n.Contains("not found")));
+        Require(session.Notes.Any(n => n.Contains("ya estaba abierto")) && session.Notes.Any(n => n.Contains("No se encuentra")));
         var start = new ProcessStartInfo("DCS.exe"); session.AddLaunchArgument(start); session.AddLaunchArgument(start);
         Require(start.ArgumentList.SequenceEqual(["--force_disable_VR"]));
     }
