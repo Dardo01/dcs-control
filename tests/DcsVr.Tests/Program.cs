@@ -103,6 +103,18 @@ Test("Flight modes: the ReShade switch renames its DLL off and back, and finds i
     var plain = Make("reshade-none/bin/DCS.exe", "x"); Make("reshade-none/bin/dxgi.dll", "another program");
     Require(FlightModes.FindReShade(new ReShadeSettings(), plain) is null, "another program's dxgi.dll is not ReShade");
 });
+Test("Flight modes: VREM's add-on is found in bin and bin-mt and renamed off and back", () =>
+{
+    var exe = Make("vrem/DCSWorld/bin-mt/DCS.exe", "x"); Make("vrem/DCSWorld/bin/DCS.exe", "x");
+    var mt = Make("vrem/DCSWorld/bin-mt/reshade DCS VREM.addon64", "a"); var st = Make("vrem/DCSWorld/bin/reshade DCS VREM.addon64", "a"); Make("vrem/DCSWorld/bin-mt/other.addon64", "b");
+    var found = FlightModes.FindVrem(exe);
+    Require(found.Count == 2 && FlightModes.VremState(found) == "on", string.Join(";", found));
+    Require(FlightModes.ApplyVrem(found, false) is not null && !File.Exists(mt) && !File.Exists(st) && File.Exists(mt + ".off"));
+    Require(FlightModes.FindVrem(exe).Count == 2 && FlightModes.VremState(FlightModes.FindVrem(exe)) == "off", "found while off");
+    Require(FlightModes.ApplyVrem(found, false) is null);
+    Require(FlightModes.ApplyVrem(found, true) is not null && File.Exists(mt) && File.Exists(st));
+    Require(FlightModes.FindVrem(Make("vrem-none/bin/DCS.exe", "x")).Count == 0);
+});
 Test("Flight modes: programs start once, an already running one is left alone, and only started ones are listed", () =>
 {
     var exe = Make("flight-apps/TrackIR5.exe", "x"); var other = Make("flight-apps/Srs.exe", "x");

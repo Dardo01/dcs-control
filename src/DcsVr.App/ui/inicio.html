@@ -70,7 +70,7 @@
   <section id="ajustes" class="view" hidden>
     <div class="settings">
       <nav class="side" aria-label="Secciones">
-        <a href="#s-programas" class="on">Programas</a><a href="#s-reshade">ReShade</a><a href="#s-rendimiento">Rendimiento</a><a href="#s-dcs">DCS</a><a href="#s-avanzado">Avanzado</a>
+        <a href="#s-programas" class="on">Programas</a><a href="#s-reshade">ReShade · VREM</a><a href="#s-rendimiento">Rendimiento</a><a href="#s-dcs">DCS</a><a href="#s-avanzado">Avanzado</a>
         <p id="saved" class="saved" aria-live="polite"></p>
       </nav>
       <div class="cards" id="cards">
@@ -80,9 +80,14 @@
         </div>
 
         <div class="card" id="s-reshade">
-          <div class="card-head"><span class="num">02</span><div><h2>ReShade</h2><p>El interruptor de Volar lo activa o desactiva en 2D y en VR, renombrando su DLL. Se busca solo junto a DCS.exe (dxgi.dll o d3d11.dll).</p></div></div>
+          <div class="card-head"><span class="num">02</span><div><h2>ReShade y VREM</h2><p>El interruptor de Volar lo activa o desactiva en 2D y en VR, renombrando su DLL. Se busca solo junto a DCS.exe (dxgi.dll o d3d11.dll).</p></div></div>
           <p id="reShadeFound" class="found"></p>
           <label class="path">DLL de ReShade (vacío: se busca solo)<span><input id="reShadePath" placeholder="…\DCSWorld\bin-mt\dxgi.dll"><button class="small" data-browse="reShadePath">Buscar…</button></span></label>
+          <h3 class="sub">VREM · ReShade VR Enhancer Mod</h3>
+          <p>Etiquetas ocultas tras la cabina, color, nitidez, menos neblina y cielo sin bandas, también en VR. Necesita ReShade con soporte de add-ons y el mod copiado en bin y bin-mt (<a href="#" id="vremLink">descarga</a>).</p>
+          <p id="vremFound" class="found"></p>
+          <label class="row"><span><b>VREM al volar en 2D</b></span><input type="checkbox" id="vrem2d" role="switch"><i aria-hidden="true"></i></label>
+          <label class="row"><span><b>VREM al volar en VR</b></span><input type="checkbox" id="vremvr" role="switch"><i aria-hidden="true"></i></label>
         </div>
 
         <div class="card" id="s-rendimiento">

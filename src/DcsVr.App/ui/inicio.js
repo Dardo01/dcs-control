@@ -39,7 +39,8 @@ function renderVolar() {
   document.querySelectorAll('.mode').forEach(b => {
     b.setAttribute('aria-checked',String(b.dataset.mode === selected));
     const m = mode(b.dataset.mode), apps = (m?.apps || []).filter(a => a.enabled).map(a => a.name);
-    b.querySelector('.apps').innerHTML = apps.map(a => '<span>'+escape(a)+'</span>').join('');
+    const fx = m?.vrem && view.vremState ? '<span class="fx">VREM</span>' : '';
+    b.querySelector('.apps').innerHTML = apps.map(a => '<span>'+escape(a)+'</span>').join('')+fx;
   });
   const state = view.reShadeState, found = Boolean(view.reShadeFound);
   $('reShade').checked = state ? (set.reShadeOn ?? state === 'on') : false;
@@ -79,6 +80,10 @@ function renderAjustes() {
   $('reShadePath').value = set.reShade?.dllPath || '';
   $('reShadeFound').className = 'found'+(view.reShadeFound ? '' : ' none');
   $('reShadeFound').textContent = view.reShadeFound ? 'Encontrado: '+view.reShadeFound+(view.reShadeState === 'off' ? ' (desactivado)' : '') : 'No se ha encontrado ReShade junto a DCS.exe.';
+  const vremCount = (view.vremFound || []).length;
+  $('vremFound').className = 'found'+(vremCount ? '' : ' none');
+  $('vremFound').textContent = vremCount ? 'Instalado ('+vremCount+(vremCount === 1 ? ' carpeta' : ' carpetas')+')'+(view.vremState === 'off' ? ', ahora desactivado.' : ', ahora activado.') : 'VREM no está instalado junto a DCS.';
+  $('vrem2d').checked = Boolean(mode('2d')?.vrem); $('vremvr').checked = Boolean(mode('vr')?.vrem);
   $('dcsPath').value = view.dcs || ''; $('optionsPath').value = view.options || '';
   $('lua2d').value = luaText(mode('2d')?.dcsSettings); $('luavr').value = luaText(mode('vr')?.dcsSettings);
   const odt = mode('vr')?.oculusDebug || {};
@@ -91,8 +96,8 @@ function readAjustes() {
   set.reShade = {...(set.reShade || {}), dllPath: $('reShadePath').value.trim()};
   set.modes = set.modes.map(m => {
     const next = {...m};
-    if (m.id === '2d') next.dcsSettings = parseLua($('lua2d').value);
-    if (m.id === 'vr') { next.dcsSettings = parseLua($('luavr').value);
+    if (m.id === '2d') { next.dcsSettings = parseLua($('lua2d').value); next.vrem = $('vrem2d').checked; }
+    if (m.id === 'vr') { next.dcsSettings = parseLua($('luavr').value); next.vrem = $('vremvr').checked;
       next.oculusDebug = {...(m.oculusDebug || {}), enabled: $('odtOn').checked, beforeFlight: lines($('odtBefore').value), afterFlight: lines($('odtAfter').value), cliPath: $('odtPath').value.trim()}; }
     return next;
   });
@@ -139,6 +144,7 @@ function setup() {
   }));
   $('reShade').addEventListener('change',e => { if (!view) return; view.set.reShadeOn = e.target.checked; renderVolar(); save().catch(showError); });
   $('fly').addEventListener('click',fly);
+  $('vremLink').addEventListener('click',e => { e.preventDefault(); request('openVrem').catch(showError); });
   document.addEventListener('keydown',e => { if (e.key === 'Enter' && document.body.dataset.tab === 'volar' && !e.target.closest('input,textarea') && !$('fly').disabled) { e.preventDefault(); fly(); } });
   // Ajustes: the side list follows the section in view.
   document.querySelectorAll('.side a').forEach(a => a.addEventListener('click',e => { e.preventDefault(); document.querySelector(a.getAttribute('href')).scrollIntoView({behavior:'smooth'}); }));

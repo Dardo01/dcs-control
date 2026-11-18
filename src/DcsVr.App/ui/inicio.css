@@ -155,3 +155,6 @@ code{font-family:var(--mono);color:var(--text)}
 #reShade:checked+i{background:#9b7cff;border-color:#9b7cff}
 .found{font:12px var(--mono);color:var(--hud);word-break:break-all}
 .found.none{color:var(--faint);font-family:inherit}
+.card h3.sub{margin:18px 0 4px;padding-top:14px;border-top:1px solid var(--edge);font-size:15px}
+.card p a{color:var(--accent)}
+.apps span.fx{border-color:rgba(155,124,255,.5);color:#cdbfff}

@@ -433,7 +433,8 @@ internal sealed class WebBridge(ControlService service, Window? owner = null,
         var set = FlightModes.Load(service.StateRoot);
         string[] notes; lock (_flightNotesLock) notes = _flightNotes;
         var reShade = FlightModes.FindReShade(set.ReShade, _dcs);
-        return new { set, reShadeFound = reShade, reShadeState = FlightModes.ReShadeState(reShade), dcs = _dcs, options = _options, dcsRunning = DcsRunning(), notes,
+        var vrem = FlightModes.FindVrem(_dcs);
+        return new { set, reShadeFound = reShade, reShadeState = FlightModes.ReShadeState(reShade), vremFound = vrem, vremState = FlightModes.VremState(vrem), dcs = _dcs, options = _options, dcsRunning = DcsRunning(), notes,
             optimizations = new { engineOptimizations = _profile.EngineOptimizations, cpuBoost = _profile.CpuBoost, freeVram = _profile.FreeVram },
             applied = service.ReadAppliedProfile() is not null, version = ProductInfo.Version };
     });
@@ -698,6 +699,11 @@ internal sealed class WebBridge(ControlService service, Window? owner = null,
                     Invalidate();
                     lock (_draftLock) Drafts.Save(_profile, _dcs, _options);
                     return Reply(id, await SimpleView());
+                case "openVrem":
+                    // VREM's download page on the DCS user files site.
+                    EnsureInteractive();
+                    using (Process.Start(new ProcessStartInfo("https://www.digitalcombatsimulator.com/en/files/3305420/") { UseShellExecute = true })) { }
+                    return Reply(id, new { });
                 case "simpleReset":
                     // The recommended modes again; the ReShade switch and path are kept.
                     await Task.Run(() => { var old = FlightModes.Load(service.StateRoot); FlightModes.Save(service.StateRoot, FlightModeSet.Defaults with { ReShade = old.ReShade, ReShadeOn = old.ReShadeOn }); });

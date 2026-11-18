@@ -17,6 +17,10 @@ The applied DCS Control profile (Engine Optimizations, CPU Boost, Free VRAM…) 
 
 `reShadeOn` (the switch on the Volar page) applies to 2D and VR; null leaves ReShade as it is. ReShade's DLL is `reShade.dllPath`, or found by itself: `dxgi.dll` or `d3d11.dll` next to DCS.exe with `ReShade.ini` beside it or "ReShade" in its version information. Off renames it to `<name>.off`; on renames it back. Another program's dxgi.dll is never touched.
 
+## VREM
+
+[VREM (ReShade VR Enhancer Mod)](https://www.digitalcombatsimulator.com/en/files/3305420/) is a ReShade add-on that works inside DCS's DirectX 11 rendering, so it also shows in VR without ReShade's OpenXR support. Each mode has `vrem` (default: off in 2D, on in VR; null leaves it as it is). The app finds `*VREM*.addon64` in DCS's `bin` and `bin-mt` folders and renames it to `.off` or back. VREM needs ReShade with full add-on support and ReShade on; the launch notes say so when ReShade is off.
+
 ## Command line
 
 ```

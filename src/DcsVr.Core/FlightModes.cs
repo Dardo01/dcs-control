@@ -48,6 +48,9 @@ public sealed record FlightMode
     public IReadOnlyDictionary<string, string> DcsSettings { get; init; } = new Dictionary<string, string>();
     public IReadOnlyList<CompanionApp> Apps { get; init; } = [];
     public OculusDebugSettings? OculusDebug { get; init; }
+    /// <summary>VREM (ReShade VR Enhancer Mod) in this mode: its ReShade add-on is renamed on or off in bin and bin-mt.
+    /// Null: left as it is.</summary>
+    public bool? Vrem { get; init; }
     public string LaunchArgument => Kind == FlightKind.Vr ? "--force_enable_VR" : "--force_disable_VR";
 }
 
@@ -70,13 +73,13 @@ public sealed record FlightModeSet
         [
             new()
             {
-                Id = "2d", Name = "2D", Kind = FlightKind.Desktop,
+                Id = "2d", Name = "2D", Kind = FlightKind.Desktop, Vrem = false,
                 DcsSettings = new Dictionary<string, string> { ["VR.enable"] = "false" },
                 Apps = [new() { Name = "TrackIR", Path = @"C:\Program Files (x86)\NaturalPoint\TrackIR5\TrackIR5.exe" }]
             },
             new()
             {
-                Id = "vr", Name = "VR", Kind = FlightKind.Vr,
+                Id = "vr", Name = "VR", Kind = FlightKind.Vr, Vrem = true,
                 DcsSettings = new Dictionary<string, string>
                 {
                     ["VR.enable"] = "true", ["VR.pixel_density"] = "1", ["graphics.SSAO"] = "0", ["graphics.SSLR"] = "false",
@@ -174,6 +177,40 @@ public static class FlightModes
         return "ReShade desactivado.";
     }
 
+    /// <summary>VREM's add-on files ("…VREM….addon64", on, or the same name + ".off") in DCS's bin and bin-mt folders,
+    /// as their "on" paths. Empty when VREM is not installed.</summary>
+    public static IReadOnlyList<string> FindVrem(string? dcsExecutable)
+    {
+        if (dcsExecutable is null || Path.GetDirectoryName(dcsExecutable) is not { } bin) return [];
+        var root = Path.GetDirectoryName(bin);
+        var folders = new[] { bin, root is null ? null : Path.Combine(root, "bin"), root is null ? null : Path.Combine(root, "bin-mt") }
+            .Where(f => f is not null && Directory.Exists(f)).Select(f => Path.GetFullPath(f!)).Distinct(StringComparer.OrdinalIgnoreCase);
+        var found = new List<string>();
+        foreach (var folder in folders)
+            foreach (var file in Directory.EnumerateFiles(folder, "*VREM*.addon*"))
+            {
+                var on = file.EndsWith(OffSuffix, StringComparison.OrdinalIgnoreCase) ? file[..^OffSuffix.Length] : file;
+                if ((on.EndsWith(".addon64", StringComparison.OrdinalIgnoreCase) || on.EndsWith(".addon", StringComparison.OrdinalIgnoreCase)) && !found.Contains(on, StringComparer.OrdinalIgnoreCase)) found.Add(on);
+            }
+        return found;
+    }
+
+    /// <summary>"on" when any VREM add-on is active, "off" when all are turned off, null when there is none.</summary>
+    public static string? VremState(IReadOnlyList<string> addons) => addons.Count == 0 ? null : addons.Any(File.Exists) ? "on" : "off";
+
+    /// <summary>Turns VREM on or off by renaming its add-on files. Returns what changed, or null.</summary>
+    public static string? ApplyVrem(IReadOnlyList<string> addons, bool on)
+    {
+        var changed = false;
+        foreach (var addon in addons)
+        {
+            var off = addon + OffSuffix;
+            if (on && !File.Exists(addon) && File.Exists(off)) { File.Move(off, addon); changed = true; }
+            if (!on && File.Exists(addon)) { if (File.Exists(off)) File.Delete(off); File.Move(addon, off); changed = true; }
+        }
+        return changed ? on ? "VREM activado." : "VREM desactivado." : null;
+    }
+
     public static string OculusScript(IEnumerable<string> commands) =>
         string.Join("\r\n", commands.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()).Append("exit")) + "\r\n";
 
@@ -237,6 +274,16 @@ public sealed class FlightSession(FlightMode mode, string scratchFolder)
             var reShade = FlightModes.FindReShade(set.ReShade, dcsExecutable);
             if (reShade is null) { if (reShadeOn) Notes.Add("No se encuentra ReShade junto a DCS.exe; indica su DLL en Ajustes."); }
             else if (FlightModes.ApplyReShade(reShade, reShadeOn) is { } changed) Notes.Add(changed);
+        }
+        if (Mode.Vrem is { } vremOn)
+        {
+            var vrem = FlightModes.FindVrem(dcsExecutable);
+            if (vrem.Count == 0) { if (vremOn) Notes.Add("VREM está activado en este modo, pero no está instalado junto a DCS."); }
+            else
+            {
+                if (FlightModes.ApplyVrem(vrem, vremOn) is { } changed) Notes.Add(changed);
+                if (vremOn && set.ReShadeOn == false) Notes.Add("VREM necesita ReShade activado para verse.");
+            }
         }
         if (Mode.OculusDebug is { } odt && FlightModes.RunOculus(odt, odt.BeforeFlight, scratchFolder) is { } problem) Notes.Add("Oculus Debug Tool: " + problem);
         foreach (var app in Mode.Apps.Where(a => a.Enabled && !string.IsNullOrWhiteSpace(a.Path)))
