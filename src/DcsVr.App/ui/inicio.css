@@ -143,3 +143,15 @@ code{font-family:var(--mono);color:var(--text)}
 @media (max-width:760px){.settings{grid-template-columns:1fr}.side{position:static;flex-direction:row;flex-wrap:wrap}.side a{border-left:0;border-bottom:2px solid var(--edge)}.two{grid-template-columns:1fr}.choice{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 .row small{display:block;margin-top:2px;color:var(--muted);font-size:12.5px}
+.toggle{display:flex;align-items:center;gap:16px;text-align:left;cursor:pointer;padding:14px 18px;border:1px solid var(--edge);border-radius:14px;background:var(--glass);backdrop-filter:blur(14px);transition:border-color .2s}
+.toggle:hover{border-color:var(--edge-hi)}
+.toggle.missing{cursor:default;opacity:.75}
+.toggle .badge{display:grid;place-items:center;width:46px;height:46px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid var(--edge);color:var(--muted);transition:all .2s}
+.toggle .badge svg{width:24px;height:24px;stroke-width:1.6}
+.toggle:has(input:checked) .badge{background:linear-gradient(140deg,#3b2a63,#1b1430);border-color:#9b7cff;color:#d7c9ff;box-shadow:0 0 18px rgba(155,124,255,.35)}
+.toggle-text{flex:1}
+.toggle-text b{display:block;font:600 16px var(--display);letter-spacing:.3px}
+.toggle-text small{display:block;margin-top:2px;color:var(--muted);font-size:12.5px}
+#reShade:checked+i{background:#9b7cff;border-color:#9b7cff}
+.found{font:12px var(--mono);color:var(--hud);word-break:break-all}
+.found.none{color:var(--faint);font-family:inherit}

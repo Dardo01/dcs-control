@@ -91,17 +91,17 @@ Test("Flight modes: the defaults survive a save and load, with a 2D and a VR mod
     Require(loaded.Get("vr").Kind == FlightKind.Vr && loaded.Get("vr").OculusDebug is not null && loaded.Get("vr").DcsSettings["graphics.preloadRadius"] == "60000");
     Throws<InvalidOperationException>(() => loaded.Get("missing"));
 });
-Test("Flight modes: the DLSS 5 switch puts the replacement in and the original back", () =>
+Test("Flight modes: the ReShade switch renames its DLL off and back, and finds it next to DCS.exe", () =>
 {
-    var target = Make("dll-swap/bin-mt/nvngx_dlss.dll", "original"); var replacement = Make("dll-swap/mine/nvngx_dlss.dll", "dlss5");
-    var backup = Path.Combine(root, "dll-swap/backup"); var swap = new DllSwap { TargetPath = target, ReplacementPath = replacement };
-    Require(FlightModes.ApplyDllSwap(swap, false, backup) is null && File.ReadAllText(target) == "original");
-    Require(FlightModes.ApplyDllSwap(swap, true, backup) is not null && File.ReadAllText(target) == "dlss5" && FlightModes.DllSwapOn(swap));
-    Require(FlightModes.ApplyDllSwap(swap, true, backup) is null);
-    Require(FlightModes.ApplyDllSwap(swap, false, backup) is not null && File.ReadAllText(target) == "original" && !FlightModes.DllSwapOn(swap));
-    var fresh = new DllSwap { TargetPath = Path.Combine(root, "dll-swap/none/nvngx_dlss.dll"), ReplacementPath = replacement }; var freshBackup = Path.Combine(root, "dll-swap/backup2");
-    FlightModes.ApplyDllSwap(fresh, true, freshBackup); Require(File.Exists(fresh.TargetPath));
-    FlightModes.ApplyDllSwap(fresh, false, freshBackup); Require(!File.Exists(fresh.TargetPath));
+    var exe = Make("reshade/bin/DCS.exe", "x"); var dll = Make("reshade/bin/dxgi.dll", "reshade"); Make("reshade/bin/ReShade.ini", "");
+    var found = FlightModes.FindReShade(new ReShadeSettings(), exe);
+    Require(found == dll && FlightModes.ReShadeState(found) == "on");
+    Require(FlightModes.ApplyReShade(found, true) is null);
+    Require(FlightModes.ApplyReShade(found, false) is not null && !File.Exists(dll) && File.Exists(dll + ".off") && FlightModes.ReShadeState(found) == "off");
+    Require(FlightModes.FindReShade(new ReShadeSettings(), exe) == dll, "still found while off");
+    Require(FlightModes.ApplyReShade(found, true) is not null && File.ReadAllText(dll) == "reshade");
+    var plain = Make("reshade-none/bin/DCS.exe", "x"); Make("reshade-none/bin/dxgi.dll", "another program");
+    Require(FlightModes.FindReShade(new ReShadeSettings(), plain) is null, "another program's dxgi.dll is not ReShade");
 });
 Test("Flight modes: programs start once, an already running one is left alone, and only started ones are listed", () =>
 {
@@ -112,7 +112,7 @@ Test("Flight modes: programs start once, an already running one is left alone, a
     {
         var mode = new FlightMode { Id = "2d", Kind = FlightKind.Desktop, Apps = [new() { Name = "TrackIR", Path = exe }, new() { Name = "SRS", Path = other }, new() { Name = "Off", Path = exe, Enabled = false }, new() { Name = "Gone", Path = Path.Combine(root, "missing.exe") }] };
         var session = new FlightSession(mode, Path.Combine(root, "flight-apps/scratch"));
-        session.Begin(new FlightModeSet(), null, [], Path.Combine(root, "flight-apps/backup"));
+        session.Begin(new FlightModeSet(), null, [], null);
         Require(started.SequenceEqual(["TrackIR"]), string.Join(",", started));
         Require(session.Notes.Any(n => n.Contains("ya estaba abierto")) && session.Notes.Any(n => n.Contains("No se encuentra")));
         var start = new ProcessStartInfo("DCS.exe"); session.AddLaunchArgument(start); session.AddLaunchArgument(start);

@@ -13,12 +13,9 @@ The applied DCS Control profile (Engine Optimizations, CPU Boost, Free VRAM…) 
 
 `flight-modes.json` in DCS Control's state folder (`%LOCALAPPDATA%\DCS Control`). `DcsVr.Cli modes` writes the defaults the first time and prints the path. Values in `dcsSettings` are Lua literals: `"0"`, `"false"`, `"\"High\""`.
 
-## DLL switch (not in the interface)
+## ReShade switch
 
-The interface has no DLSS 5 switch (the pilot uses ReShade). The file keeps the generic switch below, off by default.
-
-
-`dlss5.targetPath` is the DLL DCS loads (for example `...\DCSWorld\bin-mt\nvngx_dlss.dll`), `dlss5.replacementPath` the DLL to use instead. One switch, `dlss5On`, applies to 2D and VR: on, the replacement is copied over the target before DCS starts; the original is backed up once under `flight-modes\dll-originals` and goes back when the switch is off.
+`reShadeOn` (the switch on the Volar page) applies to 2D and VR; null leaves ReShade as it is. ReShade's DLL is `reShade.dllPath`, or found by itself: `dxgi.dll` or `d3d11.dll` next to DCS.exe with `ReShade.ini` beside it or "ReShade" in its version information. Off renames it to `<name>.off`; on renames it back. Another program's dxgi.dll is never touched.
 
 ## Command line
 
@@ -38,7 +35,7 @@ Community settings for Quest 3 over Link: [DCS forum, Quest 3 setup](https://for
 
 The app opens on a simple Spanish page (`ui/inicio.html`):
 
-- **Volar**: choose 2D or VR, and VOLAR. The launch uses Optimizations only (DCS runs with Quest Link or the monitor as it is) plus the chosen optimizations.
-- **Ajustes**: programs that open with DCS per mode, the optimizations (Engine Optimizations, CPU Boost, Free VRAM), DCS.exe and options.lua, and under Avanzado the options.lua values and Oculus Debug Tool commands. Changes save by themselves.
+- **Volar**: choose 2D or VR, the ReShade switch (both modes), and VOLAR. The launch uses Optimizations only (DCS runs with Quest Link or the monitor as it is) plus the chosen optimizations.
+- **Ajustes**: programs that open with DCS per mode, ReShade's DLL, the optimizations (Engine Optimizations, CPU Boost, Free VRAM), DCS.exe and options.lua, and under Avanzado the options.lua values and Oculus Debug Tool commands. Changes save by themselves.
 
 The full English interface (`ui/index.html`) is still in the package for the offline verification (smoke.js) but the app window no longer shows it.

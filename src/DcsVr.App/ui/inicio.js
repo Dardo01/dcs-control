@@ -1,5 +1,5 @@
 'use strict';
-/* DCS Control, interfaz sencilla: Volar (2D o VR y VOLAR) y Ajustes (programas, rendimiento, DCS). */
+/* DCS Control, interfaz sencilla: Volar (2D o VR, ReShade y VOLAR) y Ajustes (programas, ReShade, rendimiento, DCS). */
 const $ = id => document.getElementById(id);
 const escape = v => String(v ?? '').replace(/[&<>"']/g,c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let view = null, busy = false, sequence = 0, saveTimer = null;
@@ -41,12 +41,18 @@ function renderVolar() {
     const m = mode(b.dataset.mode), apps = (m?.apps || []).filter(a => a.enabled).map(a => a.name);
     b.querySelector('.apps').innerHTML = apps.map(a => '<span>'+escape(a)+'</span>').join('');
   });
+  const state = view.reShadeState, found = Boolean(view.reShadeFound);
+  $('reShade').checked = state ? (set.reShadeOn ?? state === 'on') : false;
+  $('reShade').disabled = !found;
+  $('reShade').closest('.toggle').classList.toggle('missing',!found);
+  $('reShadeState').textContent = !found ? 'No se encuentra junto a DCS · revisa Ajustes'
+    : $('reShade').checked ? 'Activado en 2D y en VR' : 'Desactivado en 2D y en VR';
   $('fly').disabled = busy || view.dcsRunning || !view.dcs;
   $('flyText').textContent = view.dcsRunning ? 'EN VUELO' : busy ? 'INICIANDO…' : 'VOLAR';
   const led = $('readyLed'); led.className = 'led '+(view.dcsRunning ? 'run' : view.dcs ? 'ok' : 'bad');
   $('readyText').textContent = view.dcsRunning ? 'DCS en marcha' : view.dcs ? 'DCS listo · '+(selected === 'vr' ? 'Quest Link' : 'Monitor') : 'No se encuentra DCS · revisa Ajustes';
   const o = view.optimizations;
-  $('strip').innerHTML = [['Motor optimizado',o.engineOptimizations],['Prioridad de CPU',o.cpuBoost],['VRAM libre',o.freeVram]]
+  $('strip').innerHTML = [['Motor optimizado',o.engineOptimizations],['Prioridad de CPU',o.cpuBoost],['VRAM libre',o.freeVram],['ReShade',found && $('reShade').checked]]
     .map(([t,on]) => `<span class="${on ? 'on' : ''}"><i></i>${t}</span>`).join('');
   $('notes').innerHTML = (view.notes || []).map(n => '<li>'+escape(n)+'</li>').join('');
 }
@@ -70,6 +76,9 @@ function renderAjustes() {
       <button class="small" data-app="change">Cambiar…</button><button class="icon" data-app="remove" title="Quitar">✕</button></div>`).join('') || '<p class="empty">Ningún programa todavía.</p>'}
     <button class="small add" data-app="add">+ Añadir programa</button></div>`).join('');
   $('optEngine').checked = view.optimizations.engineOptimizations; $('optBoost').checked = view.optimizations.cpuBoost; $('optVram').checked = view.optimizations.freeVram;
+  $('reShadePath').value = set.reShade?.dllPath || '';
+  $('reShadeFound').className = 'found'+(view.reShadeFound ? '' : ' none');
+  $('reShadeFound').textContent = view.reShadeFound ? 'Encontrado: '+view.reShadeFound+(view.reShadeState === 'off' ? ' (desactivado)' : '') : 'No se ha encontrado ReShade junto a DCS.exe.';
   $('dcsPath').value = view.dcs || ''; $('optionsPath').value = view.options || '';
   $('lua2d').value = luaText(mode('2d')?.dcsSettings); $('luavr').value = luaText(mode('vr')?.dcsSettings);
   const odt = mode('vr')?.oculusDebug || {};
@@ -79,6 +88,7 @@ function renderAjustes() {
 /** The settings fields back into view.set (the programs are changed in place by their buttons). */
 function readAjustes() {
   const set = view.set;
+  set.reShade = {...(set.reShade || {}), dllPath: $('reShadePath').value.trim()};
   set.modes = set.modes.map(m => {
     const next = {...m};
     if (m.id === '2d') next.dcsSettings = parseLua($('lua2d').value);
@@ -104,7 +114,7 @@ function saveSoon() {
 async function flushSave() { if (saveTimer) { readAjustes(); await save(); } }
 
 async function browse(target) {
-  const kind = {dcsPath:'dcs', optionsPath:'options', odtPath:'program'}[target] || 'program';
+  const kind = {dcsPath:'dcs', optionsPath:'options', odtPath:'program', reShadePath:'dll'}[target] || 'program';
   const picked = await request('browse',{target:kind});
   return picked?.path || null;
 }
@@ -127,6 +137,7 @@ function setup() {
   document.querySelectorAll('.mode').forEach(b => b.addEventListener('click',() => {
     if (!view || busy) return; view.set.lastModeId = b.dataset.mode; renderVolar(); save().catch(showError);
   }));
+  $('reShade').addEventListener('change',e => { if (!view) return; view.set.reShadeOn = e.target.checked; renderVolar(); save().catch(showError); });
   $('fly').addEventListener('click',fly);
   document.addEventListener('keydown',e => { if (e.key === 'Enter' && document.body.dataset.tab === 'volar' && !e.target.closest('input,textarea') && !$('fly').disabled) { e.preventDefault(); fly(); } });
   // Ajustes: the side list follows the section in view.
@@ -142,7 +153,7 @@ function setup() {
   $('ajustes').addEventListener('click',async e => {
     const button = e.target.closest('button'); if (!button || !view) return;
     try {
-      if (button.dataset.browse) { const path = await browse(button.dataset.browse); if (path) { $(button.dataset.browse).value = path; readAjustes(); await save(); } return; }
+      if (button.dataset.browse) { const path = await browse(button.dataset.browse); if (path) { $(button.dataset.browse).value = path; readAjustes(); await save(); renderAjustes(); } return; }
       if (button.id === 'reset') { view = await request('simpleReset'); renderVolar(); renderAjustes(); return; }
       const group = button.closest('.group'); if (!group) return;
       const m = mode(group.dataset.mode), row = button.closest('.app'), index = row ? Number(row.dataset.index) : -1;

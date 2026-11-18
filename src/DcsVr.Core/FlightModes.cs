@@ -18,16 +18,12 @@ public sealed record CompanionApp
     public int DelaySeconds { get; init; } = 2;
 }
 
-/// <summary>One file swapped in DCS's folder by a flight mode: the DLSS 5 DLL on or off. On: <see cref="ReplacementPath"/>
-/// is copied over <see cref="TargetPath"/> (the original is backed up the first time). Off: the original goes back.</summary>
-public sealed record DllSwap
+/// <summary>The ReShade switch: ReShade's DLL next to DCS.exe is renamed to "&lt;name&gt;.off" to turn it off and back to
+/// turn it on. <see cref="DllPath"/> empty: found by itself (dxgi.dll or d3d11.dll next to DCS.exe, with ReShade.ini beside it
+/// or "ReShade" in its version information).</summary>
+public sealed record ReShadeSettings
 {
-    public string Name { get; init; } = "DLSS 5";
-    /// <summary>The file DCS loads, e.g. DCS's bin-mt\nvngx_dlss.dll. Empty: the switch is not set up.</summary>
-    public string TargetPath { get; init; } = "";
-    /// <summary>The DLL to put in its place when the switch is on.</summary>
-    public string ReplacementPath { get; init; } = "";
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(TargetPath) && !string.IsNullOrWhiteSpace(ReplacementPath);
+    public string DllPath { get; init; } = "";
 }
 
 /// <summary>Oculus Debug Tool commands run before DCS starts and after it exits (VR over Quest Link).</summary>
@@ -59,10 +55,9 @@ public sealed record FlightModeSet
 {
     public int SchemaVersion { get; init; } = 1;
     public IReadOnlyList<FlightMode> Modes { get; init; } = [];
-    /// <summary>The DLSS 5 DLL the switch on the main page turns on or off, in 2D and in VR.</summary>
-    public DllSwap Dlss5 { get; init; } = new();
-    /// <summary>The main page's DLSS 5 switch: the replacement DLL in place for the next flight, whichever the mode.</summary>
-    public bool Dlss5On { get; init; }
+    public ReShadeSettings ReShade { get; init; } = new();
+    /// <summary>The main page's ReShade switch, for 2D and VR. Null: ReShade is left as it is.</summary>
+    public bool? ReShadeOn { get; init; }
     public string LastModeId { get; init; } = "2d";
 
     public FlightMode Get(string id) => Modes.FirstOrDefault(m => m.Id.Equals(id, StringComparison.OrdinalIgnoreCase))
@@ -94,7 +89,7 @@ public sealed record FlightModeSet
 }
 
 /// <summary>Reads and writes the flight modes, and does the work around a launch that is not DCS Control's applied
-/// profile: options.lua values, the DLSS 5 switch, Oculus Debug Tool and the companion programs.</summary>
+/// profile: options.lua values, the ReShade switch, Oculus Debug Tool and the companion programs.</summary>
 public static class FlightModes
 {
     public const string FileName = "flight-modes.json";
@@ -129,45 +124,55 @@ public static class FlightModes
         return (text, changed, skipped);
     }
 
-    /// <summary>Puts the DLL switch in the wanted state. The original target is kept under <paramref name="backupFolder"/>
-    /// the first time the replacement goes in (or a marker that there was none). Returns what changed, or null.</summary>
-    public static string? ApplyDllSwap(DllSwap swap, bool on, string backupFolder)
+    public const string OffSuffix = ".off";
+    private static readonly string[] ReShadeNames = ["dxgi.dll", "d3d11.dll"];
+
+    /// <summary>ReShade's DLL for this DCS: the configured path, or dxgi.dll / d3d11.dll next to DCS.exe (on or turned
+    /// off) that is ReShade's. Null when there is none.</summary>
+    public static string? FindReShade(ReShadeSettings settings, string? dcsExecutable)
     {
-        if (!swap.IsConfigured) return on ? "DLSS 5 está activado, pero falta elegir su DLL en Ajustes." : null;
-        Directory.CreateDirectory(backupFolder);
-        var original = Path.Combine(backupFolder, "original-" + Path.GetFileName(swap.TargetPath));
-        var absent = original + ".absent";
-        bool Same(string a, string b) => File.Exists(a) && File.Exists(b) && Hashing.FileSha256(a) == Hashing.FileSha256(b);
-        if (on)
+        if (!string.IsNullOrWhiteSpace(settings.DllPath)) return settings.DllPath.Trim();
+        if (dcsExecutable is null || Path.GetDirectoryName(dcsExecutable) is not { } bin) return null;
+        foreach (var name in ReShadeNames)
         {
-            if (!File.Exists(swap.ReplacementPath)) throw new FileNotFoundException("No se encuentra el DLL de DLSS 5: " + swap.ReplacementPath);
-            if (Same(swap.TargetPath, swap.ReplacementPath)) return null;
-            if (!File.Exists(original) && !File.Exists(absent))
-            {
-                if (File.Exists(swap.TargetPath)) File.Copy(swap.TargetPath, original);
-                else File.WriteAllText(absent, "");
-            }
-            Directory.CreateDirectory(Path.GetDirectoryName(swap.TargetPath)!);
-            File.Copy(swap.ReplacementPath, swap.TargetPath, true);
-            return "DLSS 5 activado.";
-        }
-        if (File.Exists(original))
-        {
-            if (Same(swap.TargetPath, original)) return null;
-            File.Copy(original, swap.TargetPath, true);
-            return "DLSS 5 desactivado (vuelve el DLL original).";
-        }
-        if (File.Exists(absent) && File.Exists(swap.TargetPath) && Same(swap.TargetPath, swap.ReplacementPath))
-        {
-            File.Delete(swap.TargetPath);
-            return "DLSS 5 desactivado.";
+            var path = Path.Combine(bin, name);
+            if (File.Exists(path) ? IsReShade(path) : File.Exists(path + OffSuffix) && IsReShade(path + OffSuffix)) return path;
         }
         return null;
     }
 
-    /// <summary>Whether the replacement DLL is in place now.</summary>
-    public static bool DllSwapOn(DllSwap swap) => swap.IsConfigured && File.Exists(swap.TargetPath) && File.Exists(swap.ReplacementPath)
-        && Hashing.FileSha256(swap.TargetPath) == Hashing.FileSha256(swap.ReplacementPath);
+    /// <summary>ReShade.ini beside it, or "ReShade" in its version information.</summary>
+    public static bool IsReShade(string path)
+    {
+        var folder = Path.GetDirectoryName(path)!;
+        if (File.Exists(Path.Combine(folder, "ReShade.ini"))) return true;
+        try
+        {
+            var info = FileVersionInfo.GetVersionInfo(path);
+            return (info.ProductName + " " + info.FileDescription).Contains("ReShade", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException or ArgumentException) { return false; }
+    }
+
+    /// <summary>"on", "off", or null when ReShade is not found.</summary>
+    public static string? ReShadeState(string? dll) => dll is null ? null : File.Exists(dll) ? "on" : File.Exists(dll + OffSuffix) ? "off" : null;
+
+    /// <summary>Turns ReShade on or off by renaming its DLL. Returns what changed, or null.</summary>
+    public static string? ApplyReShade(string? dll, bool on)
+    {
+        if (dll is null) return null;
+        var off = dll + OffSuffix;
+        if (on)
+        {
+            if (File.Exists(dll) || !File.Exists(off)) return null;
+            File.Move(off, dll);
+            return "ReShade activado.";
+        }
+        if (!File.Exists(dll)) return null;
+        if (File.Exists(off)) File.Delete(off);
+        File.Move(dll, off);
+        return "ReShade desactivado.";
+    }
 
     public static string OculusScript(IEnumerable<string> commands) =>
         string.Join("\r\n", commands.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()).Append("exit")) + "\r\n";
@@ -219,7 +224,7 @@ public sealed class FlightSession(FlightMode mode, string scratchFolder)
     public List<string> Notes { get; } = [];
 
     /// <summary>Everything before DCS starts: options.lua, the DLSS 5 switch, Oculus Debug Tool and the programs.</summary>
-    public void Begin(FlightModeSet set, string? optionsPath, IReadOnlyCollection<string> ownedSettings, string backupFolder)
+    public void Begin(FlightModeSet set, string? optionsPath, IReadOnlyCollection<string> ownedSettings, string? dcsExecutable)
     {
         if (optionsPath is not null && File.Exists(optionsPath) && Mode.DcsSettings.Count > 0)
         {
@@ -227,7 +232,12 @@ public sealed class FlightSession(FlightMode mode, string scratchFolder)
             if (changed.Count > 0) { AtomicFile.WriteText(optionsPath, text); Notes.Add("Ajustes de DCS: " + string.Join(", ", changed) + "."); }
             if (skipped.Count > 0) Notes.Add("Sin cambiar: " + string.Join(", ", skipped) + ".");
         }
-        if (FlightModes.ApplyDllSwap(set.Dlss5, set.Dlss5On, backupFolder) is { } dll) Notes.Add(dll);
+        if (set.ReShadeOn is { } reShadeOn)
+        {
+            var reShade = FlightModes.FindReShade(set.ReShade, dcsExecutable);
+            if (reShade is null) { if (reShadeOn) Notes.Add("No se encuentra ReShade junto a DCS.exe; indica su DLL en Ajustes."); }
+            else if (FlightModes.ApplyReShade(reShade, reShadeOn) is { } changed) Notes.Add(changed);
+        }
         if (Mode.OculusDebug is { } odt && FlightModes.RunOculus(odt, odt.BeforeFlight, scratchFolder) is { } problem) Notes.Add("Oculus Debug Tool: " + problem);
         foreach (var app in Mode.Apps.Where(a => a.Enabled && !string.IsNullOrWhiteSpace(a.Path)))
         {

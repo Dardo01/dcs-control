@@ -502,7 +502,7 @@ public sealed class ControlService(string distributionRoot, string stateRoot)
     }
 
     /// <summary>Launch DCS in a flight mode (2D or VR): the applied profile as in <see cref="SyncAndLaunch"/>, then the
-    /// mode's DCS settings, DLSS 5 switch, Oculus Debug Tool commands and programs, then DCS with --force_enable_VR or
+    /// mode's DCS settings, ReShade switch, Oculus Debug Tool commands and programs, then DCS with --force_enable_VR or
     /// --force_disable_VR. Call <see cref="FlightSession.End"/> once the returned process exits.</summary>
     public (LaunchSync Sync, Process Process, FlightSession Session) LaunchFlight(string modeId, VrProfile? draft, InventorySnapshot inventory)
     {
@@ -512,7 +512,7 @@ public sealed class ControlService(string distributionRoot, string stateRoot)
         var applied = ReadAppliedProfile();
         var owned = applied?.Journal.Entries.Where(e => e.LuaChanges is not null).SelectMany(e => e.LuaChanges!).Select(c => c.Path).ToHashSet(StringComparer.Ordinal) ?? [];
         var session = new FlightSession(mode, Path.Combine(StateRoot, "flight-modes"));
-        session.Begin(set, applied?.OptionsPath ?? inventory.OptionsPath, owned, Path.Combine(StateRoot, "flight-modes", "dll-originals"));
+        session.Begin(set, applied?.OptionsPath ?? inventory.OptionsPath, owned, applied?.Executable ?? inventory.DcsExecutable);
         session.AddLaunchArgument(start);
         if (!set.LastModeId.Equals(mode.Id, StringComparison.OrdinalIgnoreCase)) FlightModes.Save(StateRoot, set with { LastModeId = mode.Id });
         return (sync, Start(start), session);

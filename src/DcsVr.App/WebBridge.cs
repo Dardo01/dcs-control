@@ -432,7 +432,8 @@ internal sealed class WebBridge(ControlService service, Window? owner = null,
     {
         var set = FlightModes.Load(service.StateRoot);
         string[] notes; lock (_flightNotesLock) notes = _flightNotes;
-        return new { set, dlss5Active = FlightModes.DllSwapOn(set.Dlss5), dcs = _dcs, options = _options, dcsRunning = DcsRunning(), notes,
+        var reShade = FlightModes.FindReShade(set.ReShade, _dcs);
+        return new { set, reShadeFound = reShade, reShadeState = FlightModes.ReShadeState(reShade), dcs = _dcs, options = _options, dcsRunning = DcsRunning(), notes,
             optimizations = new { engineOptimizations = _profile.EngineOptimizations, cpuBoost = _profile.CpuBoost, freeVram = _profile.FreeVram },
             applied = service.ReadAppliedProfile() is not null, version = ProductInfo.Version };
     });
@@ -698,8 +699,8 @@ internal sealed class WebBridge(ControlService service, Window? owner = null,
                     lock (_draftLock) Drafts.Save(_profile, _dcs, _options);
                     return Reply(id, await SimpleView());
                 case "simpleReset":
-                    // The recommended modes again; the DLSS 5 DLL paths and switch are kept.
-                    await Task.Run(() => { var old = FlightModes.Load(service.StateRoot); FlightModes.Save(service.StateRoot, FlightModeSet.Defaults with { Dlss5 = old.Dlss5, Dlss5On = old.Dlss5On }); });
+                    // The recommended modes again; the ReShade switch and path are kept.
+                    await Task.Run(() => { var old = FlightModes.Load(service.StateRoot); FlightModes.Save(service.StateRoot, FlightModeSet.Defaults with { ReShade = old.ReShade, ReShadeOn = old.ReShadeOn }); });
                     return Reply(id, await SimpleView());
                 case "fly":
                     // Volar: the optimizations (Solo optimizaciones: DCS uses Quest Link or the monitor as it is), then the
