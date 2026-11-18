@@ -21,8 +21,11 @@ public static class ProfileValidation
     {
         // Optimizations only keeps the VR settings for the next VR flight; VrProfile.ForLaunch is what runs.
         if (profile.FoveatedDlss && profile.QuadViews != QuadProvider.None) profile = profile with { FoveatedDlss = false };
-        if (profile.QuadViews == QuadProvider.PimaxNative && (profile.Runtime == RuntimeKind.SboysSteamVr || profile.UsesCheeky))
+        if (profile.QuadViews == QuadProvider.PimaxNative && (profile.Runtime != RuntimeKind.Pimax || profile.UsesCheeky))
             profile = profile with { QuadViews = QuadProvider.QuadViewsFoveated };
+        // A Quest has no eye tracking and no Pimax Play: a fixed focus area with the profile's own values.
+        if (profile.Runtime == RuntimeKind.Quest && (profile.Gaze != GazeMode.Fixed || profile.FoveaSource != FoveaSource.Profile))
+            profile = profile with { Gaze = GazeMode.Fixed, FoveaSource = FoveaSource.Profile };
         return profile with { QuadFocusAdapter = profile.UsesCheeky && profile.QuadViews == QuadProvider.QuadViewsFoveated };
     }
 
@@ -85,7 +88,7 @@ public static class ProfileValidation
         if (!Enum.IsDefined(profile.FpsLimit)) Error("fps-mode", "Select a recognized DCS frame limit.");
         Range("refresh-rate", profile.HeadsetRefreshHz, 50, 240);
         Range("rendered-fps-cap", profile.RenderedFpsCap, 30, 300);
-        if (profile.Runtime == RuntimeKind.SboysSteamVr && profile.QuadViews == QuadProvider.PimaxNative)
+        if (profile.Runtime != RuntimeKind.Pimax && profile.QuadViews == QuadProvider.PimaxNative)
             Error("quad-runtime", "Pimax native Quad Views works only on the Pimax route. Select Bundled Quad Views as the Quad Views provider, or switch the route to Pimax.");
         if (profile.UsesCheeky && profile.QuadViews != QuadProvider.None && !profile.UsesQuadFocus)
             Error("quad-cheeky", "DLSS 5 with Quad Views needs Bundled Quad Views as the Quad Views provider.");
@@ -355,6 +358,8 @@ public static class ProfileValidation
                 issues.Add(new("options-location", IssueSeverity.Warning, @"The selected options.lua is not in a DCS Saved Games folder (Saved Games\DCS\Config\options.lua). DCS reads only that one, and the engine optimizations and logs are found next to it: select the options.lua DCS uses."));
             if (profile.Runtime == RuntimeKind.SboysSteamVr && !profile.Desktop && inventory.SteamVrRuntime is null && profile.RuntimeManifestPath is null)
                 Error("steamvr-not-found", "SteamVR was not found on this PC, and the Sboys route needs it. Install SteamVR and start it once.");
+            if (profile.Runtime == RuntimeKind.Quest && !profile.Desktop && inventory.QuestRuntime is null && profile.RuntimeManifestPath is null)
+                Error("quest-not-found", "No Meta Quest OpenXR runtime was found. Install Virtual Desktop Streamer (VDXR) or the Meta Quest Link app, or choose a runtime file under Runtime override (DCS & headset page).");
             // The Periphery DLSS preset changes DCS's own DLSS: with another upscaler it does nothing (DCS Control does not
             // change DCS's Upscaling for it).
             var dlss = DcsUsesDlss(profile, inventory);

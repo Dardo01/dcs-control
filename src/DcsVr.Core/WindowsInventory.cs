@@ -130,6 +130,7 @@ public sealed class WindowsInventory
             DcsExecutable = executable, OptionsPath = options,
             ActiveRuntime = activeRuntime, PimaxRuntime = File.Exists(pimaxManifest) ? pimaxManifest : null,
             SteamVrRuntime = steamManifest is not null && File.Exists(steamManifest) ? steamManifest : null,
+            QuestRuntime = QuestRoute.Find(activeRuntime),
             PimaxVersion = pimax.Version,
             DcsRunning = dcsRunning,
             Files = files, Layers = layers, Drivers = drivers, DcsSettings = settings, Observations = observations,

@@ -1,0 +1,119 @@
+name: Build (Quest 3 fork)
+
+# Builds the .NET part of DCS Control (app + CLI) from this fork, runs the test suite, and packages it on top of
+# the official release ZIP from NIGos/dcs-control (which carries the native components: OFXR, Quad Views, Cheeky,
+# the engine module and the launcher). The result is uploaded as an artifact and, on the quest3 branch, published
+# as the "quest3-latest" pre-release of this fork.
+
+on:
+  push:
+    branches: [quest3]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      DOTNET_NOLOGO: '1'
+      DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Build
+        shell: pwsh
+        run: dotnet build DcsControl.slnx -c Release
+
+      - name: Tests
+        id: tests
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          dotnet run --project tests/DcsVr.Tests -c Release --no-build 2>&1 | Tee-Object -FilePath tests-output.txt
+          exit $LASTEXITCODE
+
+      - name: Upload test output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tests-output
+          path: tests-output.txt
+          if-no-files-found: ignore
+
+      - name: Package on top of the official release
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          [xml]$props = Get-Content Directory.Build.props
+          $group = $props.Project.PropertyGroup | Where-Object { $_.VersionPrefix } | Select-Object -First 1
+          $version = "$($group.VersionPrefix)" + $(if ("$($group.VersionSuffix)") { "-$($group.VersionSuffix)" } else { '' })
+          Write-Host "Source version: $version"
+
+          # The official release with the same version, otherwise the newest one.
+          $releases = gh api repos/NIGos/dcs-control/releases --paginate | ConvertFrom-Json
+          $release = $releases | Where-Object { $_.tag_name -match [regex]::Escape($version) } | Select-Object -First 1
+          if (-not $release) {
+            Write-Warning "No official release named $version; using the newest one."
+            $release = $releases | Sort-Object { [datetime]$_.published_at } -Descending | Select-Object -First 1
+          }
+          $asset = $release.assets | Where-Object { $_.name -like '*win-x64.zip' } | Select-Object -First 1
+          if (-not $asset) { throw "Release $($release.tag_name) has no win-x64 ZIP." }
+          Write-Host "Base release: $($release.tag_name) / $($asset.name)"
+          gh release download $release.tag_name -R NIGos/dcs-control -p $asset.name -D base
+          if ($LASTEXITCODE -ne 0) { throw 'Download failed.' }
+
+          Expand-Archive -LiteralPath (Join-Path base $asset.name) -DestinationPath base/x -Force
+          $cli = Get-ChildItem base/x -Recurse -Filter DcsVr.Cli.exe | Where-Object { $_.Directory.Name -eq 'files' } | Select-Object -First 1
+          if (-not $cli) { throw 'files\DcsVr.Cli.exe not found in the release ZIP.' }
+          $root = $cli.Directory.Parent.FullName
+          $files = $cli.Directory.FullName
+
+          # Replace the .NET app and CLI with this fork's build.
+          foreach ($project in @('src/DcsVr.App', 'src/DcsVr.Cli')) {
+            dotnet publish $project -c Release -r win-x64 --self-contained true -o $files -p:DebugType=None -p:DebugSymbols=false
+            if ($LASTEXITCODE -ne 0) { throw "Publish failed: $project" }
+          }
+          & (Join-Path $files 'DcsVr.Cli.exe') presets | Set-Content -LiteralPath (Join-Path $files 'profiles/presets.json') -Encoding utf8
+
+          # Fresh integrity manifest for the files as they are now (same format as scripts/build-release.ps1).
+          $list = Get-ChildItem -LiteralPath $root -Recurse -File | Where-Object { $_.Name -ne 'release-manifest.json' } | ForEach-Object {
+            @{ path = [IO.Path]::GetRelativePath($root, $_.FullName); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant(); bytes = $_.Length }
+          }
+          @{ schemaVersion = 1; product = 'DcsControl'; version = "$version-quest3"; files = @($list) } | ConvertTo-Json -Depth 8 |
+            Set-Content -LiteralPath (Join-Path $root 'release-manifest.json') -Encoding utf8
+          & (Join-Path $files 'DcsVr.Cli.exe') app-verify --source $root
+          if ($LASTEXITCODE -ne 0) { throw 'Integrity check failed.' }
+
+          New-Item -ItemType Directory -Force out | Out-Null
+          $zip = "out/DcsControl-$version-quest3-win-x64.zip"
+          Compress-Archive -Path (Join-Path $root '*') -DestinationPath $zip -Force
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+          "base=$($release.tag_name)" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DcsControl-quest3
+          path: ${{ steps.package.outputs.zip }}
+
+      - name: Publish pre-release
+        if: github.ref == 'refs/heads/quest3'
+        shell: pwsh
+        run: |
+          $notes = @"
+          DCS Control with a Meta Quest 3 route (this fork). Built from $env:GITHUB_SHA on top of the official
+          $('${{ steps.package.outputs.base }}') release components. Tests: ${{ steps.tests.outcome }}.
+
+          Unzip and run DcsControl.exe. Not an official NIGos release.
+          "@
+          gh release delete quest3-latest -R $env:GITHUB_REPOSITORY --yes --cleanup-tag 2>$null
+          gh release create quest3-latest '${{ steps.package.outputs.zip }}' -R $env:GITHUB_REPOSITORY --prerelease --target $env:GITHUB_SHA `
+            --title 'DCS Control ${{ steps.package.outputs.version }} + Quest 3' --notes $notes

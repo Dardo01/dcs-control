@@ -48,7 +48,7 @@ public sealed class DeploymentPlanner(ComponentLocations components)
         // no OpenXR variable at all, so none is required or pinned.
         if (!profile.Desktop)
         {
-            var runtime = profile.RuntimeManifestPath ?? (profile.Runtime == RuntimeKind.Pimax ? inventory.PimaxRuntime : inventory.SteamVrRuntime);
+            var runtime = RouteRuntime.Manifest(profile, inventory);
             if (runtime is null || !File.Exists(runtime)) throw new InvalidDataException("OpenXR runtime manifest unavailable.");
             using (var document = JsonDocument.Parse(File.ReadAllText(runtime)))
             {
@@ -110,7 +110,11 @@ public sealed class DeploymentPlanner(ComponentLocations components)
             if (!same) optionChanges[path] = value;
         }
         // Optimizations only leaves DCS's VR setting as the user has it (another headset, or the monitor).
-        if (!profile.Desktop) Require("VR.enable", true);
+        // This fork: with the DCS launcher kept, its preset chooses VR or 2D, so VR.enable is left alone.
+        if (profile.KeepDcsLauncher) { }
+        else if (!profile.Desktop) Require("VR.enable", true);
+        // 2D (this fork): DCS starts on the monitor even with a headset connected.
+        else if (profile.DesktopFlat) Require("VR.enable", false);
         // DCS asks for quad views only with this option on; stereo Cheeky needs it off, otherwise it is left alone.
         if (profile.QuadViews != QuadProvider.None) Require("VR.openxr_quadView", true);
         else if (profile.UsesCheeky && current.Get("VR", "openxr_quadView") is not null) Require("VR.openxr_quadView", false);
