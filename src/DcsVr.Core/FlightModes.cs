@@ -211,8 +211,61 @@ public static class FlightModes
         return changed ? on ? "VREM activado." : "VREM desactivado." : null;
     }
 
-    public static string OculusScript(IEnumerable<string> commands) =>
-        string.Join("\r\n", commands.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim()).Append("exit")) + "\r\n";
+    public static string OculusScript(IEnumerable<string> commands, bool exit = true)
+    {
+        var lines = commands.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim());
+        return string.Join("\r\n", exit ? lines.Append("exit") : lines) + "\r\n";
+    }
+
+    /// <summary>Starts OculusDebugToolCLI with the before-flight commands and leaves it open for the whole flight,
+    /// because Link keeps some of its values only while the tool runs. <see cref="StopOculus"/> sends the after-flight
+    /// commands and closes it.</summary>
+    public static (Process? Process, string? Problem) StartOculus(OculusDebugSettings settings, IReadOnlyList<string> commands, string scratchFolder)
+    {
+        if (!settings.Enabled) return (null, null);
+        var cli = FindOculusCli(settings);
+        if (cli is null) return (null, "no se encuentra OculusDebugToolCLI.exe; indica su ruta en Ajustes.");
+        Directory.CreateDirectory(scratchFolder);
+        var script = Path.Combine(scratchFolder, "oculus-debug-commands.txt");
+        AtomicFile.WriteText(script, OculusScript(commands, exit: false));
+        var start = new ProcessStartInfo(cli)
+        {
+            ArgumentList = { "-f", script }, UseShellExecute = false, CreateNoWindow = true, WorkingDirectory = Path.GetDirectoryName(cli)!,
+            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
+        };
+        var process = Process.Start(start);
+        if (process is null) return (null, "OculusDebugToolCLI.exe no arrancó.");
+        var output = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        process.OutputDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) output.Enqueue(e.Data.Trim()); };
+        process.ErrorDataReceived += (_, e) => { if (!string.IsNullOrWhiteSpace(e.Data)) output.Enqueue(e.Data.Trim()); };
+        process.BeginOutputReadLine();
+        process.BeginErrorReadLine();
+        if (process.WaitForExit(TimeSpan.FromSeconds(3)))
+        {
+            var last = output.LastOrDefault();
+            process.Dispose();
+            return (null, "OculusDebugToolCLI.exe se cerró solo (¿está conectado Quest Link?)." + (last is null ? "" : " Respondió: " + last));
+        }
+        return (process, null);
+    }
+
+    /// <summary>Sends the after-flight commands to the tool left open by <see cref="StartOculus"/> and closes it.</summary>
+    public static string? StopOculus(Process process, IReadOnlyList<string> commands)
+    {
+        using (process)
+        {
+            try
+            {
+                if (process.HasExited) return "OculusDebugToolCLI.exe se había cerrado durante el vuelo.";
+                process.StandardInput.Write(OculusScript(commands));
+                process.StandardInput.Close();
+            }
+            catch (Exception e) when (e is IOException or InvalidOperationException) { }
+            if (process.WaitForExit(TimeSpan.FromSeconds(30))) return null;
+            try { process.Kill(); } catch (InvalidOperationException) { }
+            return "OculusDebugToolCLI.exe no se cerró al salir; se ha cerrado a la fuerza.";
+        }
+    }
 
     public static IReadOnlyList<string> OculusCliCandidates { get; set; } =
     [
@@ -277,6 +330,7 @@ public static class FlightModes
 public sealed class FlightSession(FlightMode mode, string scratchFolder)
 {
     private readonly List<(CompanionApp App, Process Process)> _started = [];
+    private Process? _oculus;
     public FlightMode Mode { get; } = mode;
     public List<string> Notes { get; } = [];
 
@@ -305,7 +359,12 @@ public sealed class FlightSession(FlightMode mode, string scratchFolder)
                 if (vremOn && set.ReShadeOn == false) Notes.Add("VREM necesita ReShade activado para verse.");
             }
         }
-        if (Mode.OculusDebug is { } odt && FlightModes.RunOculus(odt, odt.BeforeFlight, scratchFolder) is { } problem) Notes.Add("Oculus Debug Tool: " + problem);
+        if (Mode.OculusDebug is { Enabled: true } odt)
+        {
+            var (oculus, problem) = FlightModes.StartOculus(odt, odt.BeforeFlight, scratchFolder);
+            _oculus = oculus;
+            Notes.Add("Oculus Debug Tool: " + (problem ?? "abierto durante el vuelo."));
+        }
         foreach (var app in Mode.Apps.Where(a => a.Enabled && !string.IsNullOrWhiteSpace(a.Path)))
         {
             if (!File.Exists(app.Path)) { Notes.Add("No se encuentra " + app.Name + " en " + app.Path + "."); continue; }
@@ -346,7 +405,12 @@ public sealed class FlightSession(FlightMode mode, string scratchFolder)
             }
         }
         _started.Clear();
-        if (Mode.OculusDebug is { } odt && FlightModes.RunOculus(odt, odt.AfterFlight, scratchFolder) is { } problem) notes.Add("Oculus Debug Tool: " + problem);
+        if (Mode.OculusDebug is { Enabled: true } odt)
+        {
+            var problem = _oculus is { } oculus ? FlightModes.StopOculus(oculus, odt.AfterFlight) : FlightModes.RunOculus(odt, odt.AfterFlight, scratchFolder);
+            _oculus = null;
+            notes.Add("Oculus Debug Tool: " + (problem ?? "cerrado."));
+        }
         return notes;
     }
 }
