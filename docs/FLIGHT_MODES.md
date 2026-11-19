@@ -43,3 +43,12 @@ The app opens on a simple Spanish page (`ui/inicio.html`):
 - **Ajustes**: programs that open with DCS per mode, ReShade's DLL, the optimizations (Engine Optimizations, CPU Boost, Free VRAM), DCS.exe and options.lua, and under Avanzado the options.lua values and Oculus Debug Tool commands. Changes save by themselves.
 
 The full English interface (`ui/index.html`) is still in the package for the offline verification (smoke.js) but the app window no longer shows it.
+
+## Restablecer todo
+
+Ajustes › 06 Restablecer todo (two clicks, DCS closed) puts DCS back as it was before the app:
+
+- DCS Control's own files and owned options.lua settings are restored (the classic "Stock DCS" restore).
+- options.lua values changed by a flight mode go back to the value recorded before the first change (`flight-modes/options-originals.json`). Values changed before that record existed are listed so they can be checked in DCS.
+- ReShade and VREM are renamed back on, as installed.
+- The modes become neutral: no options.lua values, no ReShade or VREM switching, Oculus Debug Tool off, and the optimizations off. VOLAR then only starts DCS with the mode's launch argument and the chosen programs.

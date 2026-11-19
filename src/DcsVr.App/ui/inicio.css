@@ -136,6 +136,8 @@ textarea{resize:vertical}
 .small:hover{border-color:var(--accent);background:rgba(245,160,26,.08)}
 .small.add{margin-top:4px;color:var(--accent)}
 .small.ghost{margin-top:14px;color:var(--muted)}
+.small.danger{margin-top:6px;color:#ffb4a8;border-color:rgba(255,120,100,.45)}
+#resetNotes{margin-top:12px}
 .icon{border:0;background:none;color:var(--faint);cursor:pointer;font-size:15px;padding:4px 8px;border-radius:6px}
 .icon:hover{color:var(--red);background:rgba(255,143,125,.1)}
 code{font-family:var(--mono);color:var(--text)}

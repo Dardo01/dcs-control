@@ -161,6 +161,13 @@ function setup() {
     try {
       if (button.dataset.browse) { const path = await browse(button.dataset.browse); if (path) { $(button.dataset.browse).value = path; readAjustes(); await save(); renderAjustes(); } return; }
       if (button.id === 'reset') { view = await request('simpleReset'); renderVolar(); renderAjustes(); return; }
+      if (button.id === 'resetAll') {
+        if (!button.dataset.armed) { button.dataset.armed = '1'; button.textContent = '¿Seguro? Pulsa otra vez'; setTimeout(() => { delete button.dataset.armed; button.textContent = 'Restablecer todo'; },5000); return; }
+        delete button.dataset.armed; button.textContent = 'Restableciendo…'; button.disabled = true;
+        try { view = await request('resetAll'); renderVolar(); renderAjustes(); $('resetNotes').replaceChildren(...(view.notes || []).map(n => { const li = document.createElement('li'); li.textContent = n; return li; })); }
+        finally { button.disabled = false; button.textContent = 'Restablecer todo'; }
+        return;
+      }
       const group = button.closest('.group'); if (!group) return;
       const m = mode(group.dataset.mode), row = button.closest('.app'), index = row ? Number(row.dataset.index) : -1;
       if (button.dataset.app === 'add' || button.dataset.app === 'change') {

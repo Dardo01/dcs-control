@@ -110,7 +110,7 @@ public static class FlightModes
 
     /// <summary>options.lua with the mode's values. Settings DCS Control's applied profile owns (<paramref name="owned"/>)
     /// and settings missing from the file are left as they are and listed in Skipped.</summary>
-    public static (string Text, IReadOnlyList<string> Changed, IReadOnlyList<string> Skipped) PatchOptions(string text, IReadOnlyDictionary<string, string> settings, IReadOnlyCollection<string> owned)
+    public static (string Text, IReadOnlyList<string> Changed, IReadOnlyList<string> Skipped) PatchOptions(string text, IReadOnlyDictionary<string, string> settings, IReadOnlyCollection<string> owned, IDictionary<string, string>? originals = null)
     {
         var changed = new List<string>(); var skipped = new List<string>();
         foreach (var (path, literal) in settings)
@@ -121,10 +121,65 @@ public static class FlightModes
             var current = lua.Get(keys);
             if (current is null) { skipped.Add(path + " (no está en options.lua)"); continue; }
             if (LuaOptions.NormalizeLiteral(current) == LuaOptions.NormalizeLiteral(literal)) continue;
+            originals?.TryAdd(path, current);
             text = lua.SetLiteral(keys, literal); changed.Add(path + " = " + literal);
         }
         _ = new LuaOptions(text);
         return (text, changed, skipped);
+    }
+
+    /// <summary>options.lua values as they were before a flight mode first changed them, so "Restablecer todo" can put
+    /// them back. Kept in the flight-modes folder of the state root.</summary>
+    public static string OriginalsPath(string stateRoot) => Path.Combine(stateRoot, "flight-modes", "options-originals.json");
+
+    public static Dictionary<string, string> LoadOriginals(string stateRoot)
+    {
+        var path = OriginalsPath(stateRoot);
+        try { return File.Exists(path) ? JsonData.Deserialize<Dictionary<string, string>>(File.ReadAllText(path)) : []; }
+        catch (Exception e) when (e is IOException or InvalidDataException or System.Text.Json.JsonException) { return []; }
+    }
+
+    public static void SaveOriginals(string stateRoot, IReadOnlyDictionary<string, string> originals)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(OriginalsPath(stateRoot))!);
+        AtomicFile.WriteText(OriginalsPath(stateRoot), JsonData.Serialize(originals));
+    }
+
+    /// <summary>The modes with nothing of their own left: no options.lua values, no VREM or ReShade switching and no
+    /// Oculus Debug Tool. Programs and launch arguments stay, so Volar only opens DCS (and the chosen programs).</summary>
+    public static FlightModeSet Neutral(FlightModeSet set) => set with
+    {
+        ReShadeOn = null,
+        Modes = [.. set.Modes.Select(m => m with
+        {
+            DcsSettings = new Dictionary<string, string>(),
+            Vrem = null,
+            OculusDebug = m.OculusDebug is null ? null : m.OculusDebug with { Enabled = false }
+        })]
+    };
+
+    /// <summary>"Restablecer todo": options.lua values back to what they were before the flight modes changed them,
+    /// ReShade and VREM back on as installed, and the modes made neutral. Returns what was done, in Spanish.</summary>
+    public static List<string> ResetAll(string stateRoot, string? optionsPath, string? dcsExecutable)
+    {
+        var notes = new List<string>();
+        var set = Load(stateRoot);
+        var originals = LoadOriginals(stateRoot);
+        var touched = set.Modes.SelectMany(m => m.DcsSettings.Keys).Concat(FlightModeSet.Defaults.Modes.SelectMany(m => m.DcsSettings.Keys)).Distinct(StringComparer.Ordinal).ToList();
+        if (optionsPath is not null && File.Exists(optionsPath) && originals.Count > 0)
+        {
+            var (text, changed, _) = PatchOptions(File.ReadAllText(optionsPath), originals, []);
+            if (changed.Count > 0) { AtomicFile.WriteText(optionsPath, text); notes.Add("options.lua vuelve a como estaba: " + string.Join(", ", changed) + "."); }
+            else notes.Add("options.lua ya estaba como antes.");
+        }
+        var unknown = touched.Where(k => !originals.ContainsKey(k)).ToList();
+        if (unknown.Count > 0) notes.Add("Sin valor original guardado (revísalos en las opciones de DCS si los cambiaste): " + string.Join(", ", unknown) + ".");
+        if (FindReShade(set.ReShade, dcsExecutable) is { } reShade && ApplyReShade(reShade, true) is { } r) notes.Add(r);
+        if (FindVrem(dcsExecutable) is { Count: > 0 } vrem && ApplyVrem(vrem, true) is { } v) notes.Add(v);
+        Save(stateRoot, Neutral(set));
+        if (File.Exists(OriginalsPath(stateRoot))) File.Delete(OriginalsPath(stateRoot));
+        notes.Add("Los modos ya no cambian nada: sin ajustes de DCS, sin interruptor de ReShade ni VREM y sin Oculus Debug Tool.");
+        return notes;
     }
 
     public const string OffSuffix = ".off";
@@ -366,7 +421,11 @@ public sealed class FlightSession(FlightMode mode, string scratchFolder)
         DcsExecutable = dcsExecutable;
         if (optionsPath is not null && File.Exists(optionsPath) && Mode.DcsSettings.Count > 0)
         {
-            var (text, changed, skipped) = FlightModes.PatchOptions(File.ReadAllText(optionsPath), Mode.DcsSettings, ownedSettings);
+            var stateRoot = Path.GetDirectoryName(Path.GetFullPath(scratchFolder))!;
+            var originals = FlightModes.LoadOriginals(stateRoot);
+            var known = originals.Count;
+            var (text, changed, skipped) = FlightModes.PatchOptions(File.ReadAllText(optionsPath), Mode.DcsSettings, ownedSettings, originals);
+            if (originals.Count > known) FlightModes.SaveOriginals(stateRoot, originals);
             if (changed.Count > 0) { AtomicFile.WriteText(optionsPath, text); Notes.Add("Ajustes de DCS: " + string.Join(", ", changed) + "."); }
             if (skipped.Count > 0) Notes.Add("Sin cambiar: " + string.Join(", ", skipped) + ".");
         }

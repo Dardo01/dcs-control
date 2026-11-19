@@ -70,7 +70,7 @@
   <section id="ajustes" class="view" hidden>
     <div class="settings">
       <nav class="side" aria-label="Secciones">
-        <a href="#s-programas" class="on">Programas</a><a href="#s-reshade">ReShade · VREM</a><a href="#s-rendimiento">Rendimiento</a><a href="#s-dcs">DCS</a><a href="#s-avanzado">Avanzado</a>
+        <a href="#s-programas" class="on">Programas</a><a href="#s-reshade">ReShade · VREM</a><a href="#s-rendimiento">Rendimiento</a><a href="#s-dcs">DCS</a><a href="#s-avanzado">Avanzado</a><a href="#s-restablecer">Restablecer</a>
         <p id="saved" class="saved" aria-live="polite"></p>
       </nav>
       <div class="cards" id="cards">
@@ -116,6 +116,12 @@
           </div>
           <label class="path">OculusDebugToolCLI.exe (vacío: se busca solo)<span><input id="odtPath"><button class="small" data-browse="odtPath">Buscar…</button></span></label>
           <button id="reset" class="small ghost">Volver a los valores recomendados</button>
+        </div>
+
+        <div class="card" id="s-restablecer">
+          <div class="card-head"><span class="num">06</span><div><h2>Restablecer todo</h2><p>Deja DCS como estaba antes de usar la app y apaga todo lo que hace: ajustes de DCS, ReShade y VREM, Oculus Debug Tool y optimizaciones. VOLAR solo abrirá DCS y tus programas. Cierra DCS antes.</p></div></div>
+          <button id="resetAll" class="small danger">Restablecer todo</button>
+          <ul id="resetNotes" class="notes"></ul>
         </div>
       </div>
     </div>

@@ -132,6 +132,26 @@ Test("Flight modes: programs start once, an already running one is left alone, a
     }
     finally { (FlightModes.IsRunning, FlightModes.StartApp, FlightModes.Delay) = (isRunning, startApp, delay); }
 });
+Test("Flight modes: Restablecer todo puts options.lua back, turns ReShade and VREM on and leaves the modes neutral", () =>
+{
+    var state = Path.Combine(root, "reset-all/state");
+    var options = Make("reset-all/Config/options.lua", "options = {\n\t[\"VR\"] = {\n\t\t[\"pixel_density\"] = 1.4,\n\t},\n\t[\"graphics\"] = {\n\t\t[\"SSAO\"] = 2,\n\t},\n}\n");
+    var exe = Make("reset-all/DCSWorld/bin-mt/DCS.exe", "x"); var dll = Make("reset-all/DCSWorld/bin-mt/dxgi.dll", "reshade"); Make("reset-all/DCSWorld/bin-mt/ReShade.ini", "");
+    var vrem = Make("reset-all/DCSWorld/bin-mt/VREM.addon64", "a");
+    FlightModes.Save(state, FlightModeSet.Defaults with { ReShadeOn = false });
+    var vr = FlightModeSet.Defaults.Get("vr") with { OculusDebug = null, Vrem = false };
+    var session = new FlightSession(vr, Path.Combine(state, "flight-modes"));
+    session.Begin(FlightModeSet.Defaults with { ReShadeOn = false }, options, [], exe);
+    Require(new LuaOptions(File.ReadAllText(options)).Get("VR", "pixel_density") == "1" && !File.Exists(dll) && !File.Exists(vrem), "the flight changed things");
+    var notes = FlightModes.ResetAll(state, options, exe);
+    var lua = new LuaOptions(File.ReadAllText(options));
+    Require(lua.Get("VR", "pixel_density") == "1.4" && lua.Get("graphics", "SSAO") == "2", string.Join(" | ", notes));
+    Require(File.Exists(dll) && File.Exists(vrem), "ReShade and VREM back on");
+    var set = FlightModes.Load(state);
+    Require(set.ReShadeOn is null && set.Modes.All(m => m.DcsSettings.Count == 0 && m.Vrem is null && m.OculusDebug is not { Enabled: true }));
+    Require(set.Get("2d").Apps.Count == FlightModeSet.Defaults.Get("2d").Apps.Count, "programs kept");
+    Require(!File.Exists(FlightModes.OriginalsPath(state)));
+});
 Test("Flight modes: Oculus Debug Tool script ends with exit and skips empty lines", () =>
     Require(FlightModes.OculusScript(["server:asw.Off", " ", "set-pixels-per-display-pixel-override 1.5"]) == "server:asw.Off\r\nset-pixels-per-display-pixel-override 1.5\r\nexit\r\n"));
 Test("Lua empty table insertion", () => Require(new LuaOptions(new LuaOptions("options={VR={}}").Set(["VR", "enable"], true)).Get("VR", "enable") == "true"));

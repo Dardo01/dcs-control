@@ -500,7 +500,7 @@ internal sealed class WebBridge(ControlService service, Window? owner = null,
             // The guided setup checks its candidate (replace=true): the page's own draft, paths and scan are kept from before.
             if (action == "checkReadiness" && data.TryGetProperty("replace", out var replace) && replace.ValueKind == JsonValueKind.True)
                 wizardBefore = (_profile, _dcs, _options, _inventory, _eyeResolution, _status);
-            if (action is "launch" or "apply" or "restore" or "grantWriteAccess" or "fly" or "simpleSave") _writing = action;
+            if (action is "launch" or "apply" or "restore" or "grantWriteAccess" or "fly" or "simpleSave" or "resetAll") _writing = action;
             // import and restore reply with the profile too: without the page's draft they would bring back an older one.
             if (action is "preview" or "apply" or "launch" or "resetNeural" or "save" or "export" or "refresh" or "checkReadiness" or "import" or "restore" or "prepareSboys" or "importSboys" or "openSboys" or "detect" or "diagnosticPackage" or "grantWriteAccess") ReadDraft(data);
             switch (action)
@@ -708,6 +708,22 @@ internal sealed class WebBridge(ControlService service, Window? owner = null,
                 case "simpleReset":
                     // The recommended modes again; the ReShade switch and path are kept.
                     await Task.Run(() => { var old = FlightModes.Load(service.StateRoot); FlightModes.Save(service.StateRoot, FlightModeSet.Defaults with { ReShade = old.ReShade, ReShadeOn = old.ReShadeOn }); });
+                    return Reply(id, await SimpleView());
+                case "resetAll":
+                    // Restablecer todo: DCS as before the app (its files and owned settings, the flight modes' options.lua
+                    // values, ReShade and VREM on as installed) and every mode and optimization off, so the app changes nothing.
+                    Invalidate(); await Capture();
+                    if (DcsRunning()) throw new InvalidOperationException("Cierra DCS antes de restablecer.");
+                    var (resetDcs, resetOptions) = (service.ReadAppliedProfile()?.Executable ?? CurrentInventory.DcsExecutable, service.ReadAppliedProfile()?.OptionsPath ?? CurrentInventory.OptionsPath);
+                    var resetNotes = new List<string>();
+                    var baseRestore = await Task.Run(() => service.RestoreOriginals(resetDcs, resetOptions));
+                    resetNotes.Add(baseRestore.Complete ? "Archivos y optimizaciones de DCS Control quitados." : "Algunos archivos no se pudieron restaurar: " + string.Join("; ", baseRestore.Conflicts));
+                    resetNotes.AddRange(await Task.Run(() => FlightModes.ResetAll(service.StateRoot, resetOptions, resetDcs)));
+                    _profile = _profile with { Desktop = true, EngineOptimizations = false, CpuBoost = false, FreeVram = false };
+                    Invalidate();
+                    lock (_draftLock) Drafts.Save(_profile, _dcs, _options);
+                    lock (_flightNotesLock) _flightNotes = [.. resetNotes];
+                    foreach (var note in resetNotes) AppLog.Info("Restablecer todo: " + note);
                     return Reply(id, await SimpleView());
                 case "fly":
                     // Volar: the optimizations (Solo optimizaciones: DCS uses Quest Link or the monitor as it is), then the
