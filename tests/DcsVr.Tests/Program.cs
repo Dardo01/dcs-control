@@ -73,6 +73,87 @@ Test("Test-folder pruning skips a run still going (its lock held) and folders to
 const string Lua = "-- preserve comment\r\noptions = { VR = {enable=false, openxr_quadView = true}, graphics = { Upscaling = \"DLSS\", maxFPS=89, }, [\"other\"] = { [1]=\"a\", }, }";
 Test("Lua existing replacement preserves unrelated text", () => { var patched = new LuaOptions(Lua).Set(["VR", "openxr_quadView"], false); Require(patched == Lua.Replace("openxr_quadView = true", "openxr_quadView = false")); });
 Test("Lua missing field in table without trailing comma", () => { var p = new LuaOptions(Lua).Set(["VR", "openxr_eyeGaze"], true); Require(new LuaOptions(p).Get("VR", "openxr_eyeGaze") == "true"); Require(p.Contains("\r\n")); });
+Test("Flight modes: options.lua gets the mode's values, owned and missing settings are skipped", () =>
+{
+    var text = "options = {\n\t[\"VR\"] = {\n\t\t[\"enable\"] = false,\n\t\t[\"pixel_density\"] = 1.2,\n\t},\n\t[\"graphics\"] = {\n\t\t[\"SSAO\"] = 1,\n\t\t[\"maxFPS\"] = 90,\n\t},\n}\n";
+    var settings = new Dictionary<string, string> { ["VR.enable"] = "true", ["VR.pixel_density"] = "1", ["graphics.maxFPS"] = "72", ["graphics.SSLR"] = "false", ["graphics.SSAO"] = "1" };
+    var (patched, changed, skipped) = FlightModes.PatchOptions(text, settings, new HashSet<string> { "graphics.maxFPS" });
+    var lua = new LuaOptions(patched);
+    Require(lua.Get("VR", "enable") == "true" && lua.Get("VR", "pixel_density") == "1" && lua.Get("graphics", "maxFPS") == "90" && lua.Get("graphics", "SSLR") is null);
+    Require(changed.Count == 2, string.Join(";", changed)); Require(skipped.Count == 2, string.Join(";", skipped));
+});
+Test("Flight modes: the defaults survive a save and load, with a 2D and a VR mode", () =>
+{
+    var state = Path.Combine(root, "flight-modes-roundtrip");
+    FlightModes.Save(state, FlightModeSet.Defaults);
+    var loaded = FlightModes.Load(state);
+    Require(loaded.Get("2d").Kind == FlightKind.Desktop && loaded.Get("2d").LaunchArgument == "--force_disable_VR");
+    Require(loaded.Get("vr").Kind == FlightKind.Vr && loaded.Get("vr").OculusDebug is not null && loaded.Get("vr").DcsSettings["graphics.preloadRadius"] == "60000");
+    Throws<InvalidOperationException>(() => loaded.Get("missing"));
+});
+Test("Flight modes: the ReShade switch renames its DLL off and back, and finds it next to DCS.exe", () =>
+{
+    var exe = Make("reshade/bin/DCS.exe", "x"); var dll = Make("reshade/bin/dxgi.dll", "reshade"); Make("reshade/bin/ReShade.ini", "");
+    var found = FlightModes.FindReShade(new ReShadeSettings(), exe);
+    Require(found == dll && FlightModes.ReShadeState(found) == "on");
+    Require(FlightModes.ApplyReShade(found, true) is null);
+    Require(FlightModes.ApplyReShade(found, false) is not null && !File.Exists(dll) && File.Exists(dll + ".off") && FlightModes.ReShadeState(found) == "off");
+    Require(FlightModes.FindReShade(new ReShadeSettings(), exe) == dll, "still found while off");
+    Require(FlightModes.ApplyReShade(found, true) is not null && File.ReadAllText(dll) == "reshade");
+    var plain = Make("reshade-none/bin/DCS.exe", "x"); Make("reshade-none/bin/dxgi.dll", "another program");
+    Require(FlightModes.FindReShade(new ReShadeSettings(), plain) is null, "another program's dxgi.dll is not ReShade");
+});
+Test("Flight modes: VREM's add-on is found in bin and bin-mt and renamed off and back", () =>
+{
+    var exe = Make("vrem/DCSWorld/bin-mt/DCS.exe", "x"); Make("vrem/DCSWorld/bin/DCS.exe", "x");
+    var mt = Make("vrem/DCSWorld/bin-mt/reshade DCS VREM.addon64", "a"); var st = Make("vrem/DCSWorld/bin/reshade DCS VREM.addon64", "a"); Make("vrem/DCSWorld/bin-mt/other.addon64", "b");
+    var found = FlightModes.FindVrem(exe);
+    Require(found.Count == 2 && FlightModes.VremState(found) == "on", string.Join(";", found));
+    Require(FlightModes.ApplyVrem(found, false) is not null && !File.Exists(mt) && !File.Exists(st) && File.Exists(mt + ".off"));
+    Require(FlightModes.FindVrem(exe).Count == 2 && FlightModes.VremState(FlightModes.FindVrem(exe)) == "off", "found while off");
+    Require(FlightModes.ApplyVrem(found, false) is null);
+    Require(FlightModes.ApplyVrem(found, true) is not null && File.Exists(mt) && File.Exists(st));
+    Require(FlightModes.FindVrem(Make("vrem-none/bin/DCS.exe", "x")).Count == 0);
+});
+Test("Flight modes: programs start once, an already running one is left alone, and only started ones are listed", () =>
+{
+    var exe = Make("flight-apps/TrackIR5.exe", "x"); var other = Make("flight-apps/Srs.exe", "x");
+    var started = new List<string>(); var (isRunning, startApp, delay) = (FlightModes.IsRunning, FlightModes.StartApp, FlightModes.Delay);
+    FlightModes.IsRunning = path => path == other; FlightModes.StartApp = app => { started.Add(app.Name); return null; }; FlightModes.Delay = _ => { };
+    try
+    {
+        var mode = new FlightMode { Id = "2d", Kind = FlightKind.Desktop, Apps = [new() { Name = "TrackIR", Path = exe }, new() { Name = "SRS", Path = other }, new() { Name = "Off", Path = exe, Enabled = false }, new() { Name = "Gone", Path = Path.Combine(root, "missing.exe") }] };
+        var session = new FlightSession(mode, Path.Combine(root, "flight-apps/scratch"));
+        session.Begin(new FlightModeSet(), null, [], null);
+        Require(started.SequenceEqual(["TrackIR"]), string.Join(",", started));
+        Require(session.Notes.Any(n => n.Contains("ya estaba abierto")) && session.Notes.Any(n => n.Contains("No se encuentra")));
+        var start = new ProcessStartInfo("DCS.exe"); session.AddLaunchArgument(start); session.AddLaunchArgument(start);
+        Require(start.ArgumentList.SequenceEqual(["--force_disable_VR"]));
+    }
+    finally { (FlightModes.IsRunning, FlightModes.StartApp, FlightModes.Delay) = (isRunning, startApp, delay); }
+});
+Test("Flight modes: Restablecer todo puts options.lua back, turns ReShade and VREM on and leaves the modes neutral", () =>
+{
+    var state = Path.Combine(root, "reset-all/state");
+    var options = Make("reset-all/Config/options.lua", "options = {\n\t[\"VR\"] = {\n\t\t[\"pixel_density\"] = 1.4,\n\t},\n\t[\"graphics\"] = {\n\t\t[\"SSAO\"] = 2,\n\t},\n}\n");
+    var exe = Make("reset-all/DCSWorld/bin-mt/DCS.exe", "x"); var dll = Make("reset-all/DCSWorld/bin-mt/dxgi.dll", "reshade"); Make("reset-all/DCSWorld/bin-mt/ReShade.ini", "");
+    var vrem = Make("reset-all/DCSWorld/bin-mt/VREM.addon64", "a");
+    FlightModes.Save(state, FlightModeSet.Defaults with { ReShadeOn = false });
+    var vr = FlightModeSet.Defaults.Get("vr") with { OculusDebug = null, Vrem = false };
+    var session = new FlightSession(vr, Path.Combine(state, "flight-modes"));
+    session.Begin(FlightModeSet.Defaults with { ReShadeOn = false }, options, [], exe);
+    Require(new LuaOptions(File.ReadAllText(options)).Get("VR", "pixel_density") == "1" && !File.Exists(dll) && !File.Exists(vrem), "the flight changed things");
+    var notes = FlightModes.ResetAll(state, options, exe);
+    var lua = new LuaOptions(File.ReadAllText(options));
+    Require(lua.Get("VR", "pixel_density") == "1.4" && lua.Get("graphics", "SSAO") == "2", string.Join(" | ", notes));
+    Require(File.Exists(dll) && File.Exists(vrem), "ReShade and VREM back on");
+    var set = FlightModes.Load(state);
+    Require(set.ReShadeOn is null && set.Modes.All(m => m.DcsSettings.Count == 0 && m.Vrem is null && m.OculusDebug is not { Enabled: true }));
+    Require(set.Get("2d").Apps.Count == FlightModeSet.Defaults.Get("2d").Apps.Count, "programs kept");
+    Require(!File.Exists(FlightModes.OriginalsPath(state)));
+});
+Test("Flight modes: Oculus Debug Tool script ends with exit and skips empty lines", () =>
+    Require(FlightModes.OculusScript(["server:asw.Off", " ", "set-pixels-per-display-pixel-override 1.5"]) == "server:asw.Off\r\nset-pixels-per-display-pixel-override 1.5\r\nexit\r\n"));
 Test("Lua empty table insertion", () => Require(new LuaOptions(new LuaOptions("options={VR={}}").Set(["VR", "enable"], true)).Get("VR", "enable") == "true"));
 Test("Lua strings escape quotes and backslashes", () => { var value = "a\\b\"c\n"; var patched = new LuaOptions(Lua).Set(["graphics", "Upscaling"], value); Require(new LuaOptions(patched).Get("graphics", "Upscaling")!.Contains("\\n")); });
 Test("Lua rejects execution", () => Throws<InvalidDataException>(() => new LuaOptions("options = os.execute('test')")));
@@ -970,6 +1051,82 @@ Test("Baseline and framegen installation in isolated DCS fixture", () =>
     var plan = planner.Build(p, inv, Path.Combine(root, "fixture/managed")); Require(Hashing.FileSha256(options) == before); Require(plan.LaunchEnvironment["XR_ENABLE_API_LAYERS"] == "XR_APILAYER_XRFrameBridge_diagnostic");
     Require(plan.LaunchEnvironment[VectorXr.DisableVariable] == "1", "VectorXR stays off while DCS runs with the profile's own layers");
     var store = new OriginalsStore(Path.Combine(root, "originals/full-plan")); store.Apply(plan); Require(new LuaOptions(File.ReadAllText(options)).Get("VR", "enable") == "true"); Require(store.RestoreOriginals().Complete); Require(Hashing.FileSha256(options) == before);
+});
+// ---- This fork: the Meta Quest route and 2D ----
+Test("Quest: Quad Views is the bundled provider with a fixed focus from the profile, never Pimax's", () =>
+{
+    var p = ProfileValidation.ResolveFeatures(new VrProfile { Runtime = RuntimeKind.Quest, QuadViews = QuadProvider.PimaxNative, Gaze = GazeMode.EyeTracked, FoveaSource = FoveaSource.PimaxPlay });
+    Require(p.QuadViews == QuadProvider.QuadViewsFoveated && p.Gaze == GazeMode.Fixed && p.FoveaSource == FoveaSource.Profile);
+    Require(ProfileValidation.Validate(new VrProfile { Runtime = RuntimeKind.Quest }).Any(i => i.Code == "quad-runtime"), "raw Pimax native Quad Views is refused on Quest");
+    Require(!PimaxFovea.UsesPimaxPlay(new VrProfile { Runtime = RuntimeKind.Quest, QuadViews = QuadProvider.QuadViewsFoveated, FoveaSource = FoveaSource.PimaxPlay }));
+    Require(HeadsetRefresh.Detect(RuntimeKind.Quest) is null, "a Quest's refresh rate is set by hand");
+    Require(JsonData.Deserialize<VrProfile>(JsonData.Serialize(p)) == p, "JSON round trip");
+});
+Test("Quest: the runtime is VDXR or Meta's, the active one first, and the override wins", () =>
+{
+    var (vd, meta) = (QuestRoute.VirtualDesktopManifest, QuestRoute.MetaManifest);
+    try
+    {
+        QuestRoute.VirtualDesktopManifest = Path.Combine(root, "quest-find/Virtual Desktop Streamer/OpenXR/virtualdesktop-openxr.json");
+        QuestRoute.MetaManifest = Path.Combine(root, "quest-find/Oculus/Support/oculus-runtime/oculus_openxr_64.json");
+        Require(QuestRoute.Find(null) is null, "nothing installed");
+        Make("quest-find/Oculus/Support/oculus-runtime/oculus_openxr_64.json", "{}");
+        Require(QuestRoute.Find(null) == QuestRoute.MetaManifest && QuestRoute.Name(QuestRoute.MetaManifest) == "Meta Quest Link");
+        Make("quest-find/Virtual Desktop Streamer/OpenXR/virtualdesktop-openxr.json", "{}");
+        Require(QuestRoute.Find(null) == QuestRoute.VirtualDesktopManifest, "VDXR before Meta's");
+        Require(QuestRoute.Find(QuestRoute.MetaManifest) == QuestRoute.MetaManifest, "the registered Quest runtime first");
+        Require(QuestRoute.Find(Path.Combine(root, "steamxr_win64.json")) == QuestRoute.VirtualDesktopManifest, "another registered runtime is not a Quest's");
+        var inventory = new InventorySnapshot { QuestRuntime = "quest.json", SteamVrRuntime = "steam.json", PimaxRuntime = "pimax.json" };
+        Require(RouteRuntime.Manifest(new VrProfile { Runtime = RuntimeKind.Quest }, inventory) == "quest.json");
+        Require(RouteRuntime.Manifest(new VrProfile { Runtime = RuntimeKind.Quest, RuntimeManifestPath = "override.json" }, inventory) == "override.json");
+        Require(RouteRuntime.Manifest(new VrProfile { Runtime = RuntimeKind.SboysSteamVr }, inventory) == "steam.json" && RouteRuntime.Manifest(new VrProfile(), inventory) == "pimax.json");
+    }
+    finally { (QuestRoute.VirtualDesktopManifest, QuestRoute.MetaManifest) = (vd, meta); }
+});
+Test("Quest: a running Virtual Desktop Streamer or Quest Link is the Quest route", () =>
+{
+    var none = new DetectionSources { SteamVrServerLog = Path.Combine(root, "missing.txt"), PimaxPlaySettings = Path.Combine(root, "missing.json"), NeuralRuntimeFolders = [] };
+    Require(SetupDetection.DetectActiveRoute(none with { ProcessRunning = n => n == "VirtualDesktop.Streamer" }).Route == RuntimeKind.Quest);
+    Require(SetupDetection.DetectActiveRoute(none with { ProcessRunning = n => n == "OVRServer_x64" }).Route == RuntimeKind.Quest);
+    var detected = SetupDetection.Detect(new VrProfile { QuadViews = QuadProvider.QuadViewsFoveated, Gaze = GazeMode.EyeTracked }, new InventorySnapshot(), none with { ProcessRunning = n => n == "VirtualDesktop.Streamer" });
+    Require(detected.Profile.Runtime == RuntimeKind.Quest && detected.Profile.Gaze == GazeMode.Fixed && detected.Profile.FoveaSource == FoveaSource.Profile);
+});
+Test("Quest: DCS launches on the Quest's runtime, in VR", () =>
+{
+    var exe = Make("quest-plan/bin/DCS.exe", "fixture"); var options = Make("quest-plan/options.lua", Lua);
+    var runtime = Make("quest-plan/vd/virtualdesktop-openxr.json", "{\"runtime\":{\"library_path\":\"runtime.dll\"}}"); Make("quest-plan/vd/runtime.dll", "fixture");
+    var p = ProfileValidation.ResolveFeatures(new VrProfile { Runtime = RuntimeKind.Quest, QuadViews = QuadProvider.None });
+    var plan = new DeploymentPlanner(new(null, null, null)).Build(p, new() { DcsExecutable = exe, OptionsPath = options, QuestRuntime = runtime }, Path.Combine(root, "quest-plan/managed"));
+    Require(plan.LaunchEnvironment["XR_RUNTIME_JSON"] == Path.GetFullPath(runtime));
+    Require(plan.Files.Single(f => f.Path == options).LuaChanges!.Single(c => c.Path == "VR.enable").InstalledRaw == "true");
+    Require(ProfileValidation.Validate(p, new() { DcsExecutable = exe, OptionsPath = options }).Any(i => i.Code == "quest-not-found"), "no Quest runtime is an error");
+    Require(!ProfileValidation.Validate(p, new() { DcsExecutable = exe, OptionsPath = options, QuestRuntime = runtime }).Any(i => i.Code == "quest-not-found"));
+});
+Test("With the DCS launcher kept, its preset chooses VR or 2D: VR.enable is left alone", () =>
+{
+    var exe = Make("launcher-vr/bin/DCS.exe", "fixture"); var options = Make("launcher-vr/options.lua", Lua);
+    var runtime = Make("launcher-vr/vd/virtualdesktop-openxr.json", "{\"runtime\":{\"library_path\":\"runtime.dll\"}}"); Make("launcher-vr/vd/runtime.dll", "fixture");
+    var inv = new InventorySnapshot { DcsExecutable = exe, OptionsPath = options, QuestRuntime = runtime };
+    foreach (var p in new[] { new VrProfile { Runtime = RuntimeKind.Quest, QuadViews = QuadProvider.None, KeepDcsLauncher = true }, new VrProfile { Desktop = true, DesktopFlat = true, KeepDcsLauncher = true } })
+    {
+        var plan = new DeploymentPlanner(new(null, null, null)).Build(p, inv, Path.Combine(root, "launcher-vr/managed-" + p.Desktop));
+        Require(!plan.Files.Where(f => f.Path == options).SelectMany(f => f.LuaChanges ?? []).Any(c => c.Path == "VR.enable" || c.Path == "miscellaneous.launcher"), "launcher and VR switch untouched");
+        if (!p.Desktop) Require(plan.LaunchEnvironment["XR_RUNTIME_JSON"] == Path.GetFullPath(runtime), "the Quest's runtime is ready if the preset picks VR");
+    }
+});
+Test("2D: VR off on the monitor, DLSS 5 only when chosen, nothing else of VR", () =>
+{
+    var vr = new VrProfile { Runtime = RuntimeKind.Quest, QuadViews = QuadProvider.QuadViewsFoveated, NeuralRendering = true, FrameGen = FrameGeneration.Nvidia };
+    var flat = (vr with { Desktop = true, DesktopFlat = true }).ForLaunch();
+    Require(flat.QuadViews == QuadProvider.None && !flat.NeuralRendering && flat.FrameGen == FrameGeneration.Off && !flat.UsesCheeky, "VR features stay in the profile but do not run");
+    var dlss = (vr with { Desktop = true, DesktopFlat = true, DesktopNeuralRendering = true }).ForLaunch();
+    Require(dlss.NeuralRendering && dlss.UsesCheeky && !dlss.UsesQuadFocus && !dlss.FoveatedDlss && dlss.FrameGen == FrameGeneration.Off);
+    var exe = Make("flat/bin/DCS.exe", "fixture"); var options = Make("flat/options.lua", Lua.Replace("enable=false", "enable=true"));
+    var plan = new DeploymentPlanner(new(null, null, null)).Build(vr with { Desktop = true, DesktopFlat = true }, new() { DcsExecutable = exe, OptionsPath = options }, Path.Combine(root, "flat/managed"));
+    Require(plan.Files.Single(f => f.Path == options).LuaChanges!.Single(c => c.Path == "VR.enable").InstalledRaw == "false", "2D turns DCS's VR off");
+    Require(!plan.LaunchEnvironment.ContainsKey("XR_RUNTIME_JSON"));
+    var other = new DeploymentPlanner(new(null, null, null)).Build(vr with { Desktop = true }, new() { DcsExecutable = exe, OptionsPath = options }, Path.Combine(root, "flat/managed-other"));
+    Require(!(other.Files.SingleOrDefault(f => f.Path == options)?.LuaChanges ?? []).Any(c => c.Path == "VR.enable"), "Optimizations only keeps DCS's VR setting");
 });
 var failed = new List<string>(); var timer = Stopwatch.StartNew();
 Test("Software Quad Views plus framegen deploys per-process configuration", () =>

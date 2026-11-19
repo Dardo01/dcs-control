@@ -427,6 +427,19 @@ internal sealed class WebBridge(ControlService service, Window? owner = null,
     private ApplyPlan? _plan;
     private ReadinessReport? _readiness;
     private Dictionary<string, string>? _sboysHashes;
+    /// <summary>What inicio.html shows: modes, DLSS 5, optimizations, DCS paths, DCS running and the last launch.</summary>
+    private Task<object> SimpleView() => Task.Run<object>(() =>
+    {
+        var set = FlightModes.Load(service.StateRoot);
+        string[] notes; lock (_flightNotesLock) notes = _flightNotes;
+        var reShade = FlightModes.FindReShade(set.ReShade, _dcs);
+        var vrem = FlightModes.FindVrem(_dcs);
+        return new { set, reShadeFound = reShade, reShadeState = FlightModes.ReShadeState(reShade), vremFound = vrem, vremState = FlightModes.VremState(vrem), dcs = _dcs, options = _options, dcsRunning = DcsRunning(), notes,
+            optimizations = new { engineOptimizations = _profile.EngineOptimizations, cpuBoost = _profile.CpuBoost, freeVram = _profile.FreeVram },
+            applied = service.ReadAppliedProfile() is not null, version = ProductInfo.Version };
+    });
+    private string[] _flightNotes = [];
+    private readonly object _flightNotesLock = new();
     private string _status = "Ready. Launch DCS applies the profile shown here, then starts DCS.";
     private string _report = "Review files lists what Launch DCS will write.";
     public string StateRoot => service.StateRoot;
@@ -487,7 +500,7 @@ internal sealed class WebBridge(ControlService service, Window? owner = null,
             // The guided setup checks its candidate (replace=true): the page's own draft, paths and scan are kept from before.
             if (action == "checkReadiness" && data.TryGetProperty("replace", out var replace) && replace.ValueKind == JsonValueKind.True)
                 wizardBefore = (_profile, _dcs, _options, _inventory, _eyeResolution, _status);
-            if (action is "launch" or "apply" or "restore" or "grantWriteAccess") _writing = action;
+            if (action is "launch" or "apply" or "restore" or "grantWriteAccess" or "fly" or "simpleSave" or "resetAll") _writing = action;
             // import and restore reply with the profile too: without the page's draft they would bring back an older one.
             if (action is "preview" or "apply" or "launch" or "resetNeural" or "save" or "export" or "refresh" or "checkReadiness" or "import" or "restore" or "prepareSboys" or "importSboys" or "openSboys" or "detect" or "diagnosticPackage" or "grantWriteAccess") ReadDraft(data);
             switch (action)
@@ -539,6 +552,7 @@ internal sealed class WebBridge(ControlService service, Window? owner = null,
                         "gaze" => "https://github.com/mbucchia/Quad-Views-Foveated/wiki/Pimax-Crystal",
                         "pimax" => "https://pimax.com/pages/downloads",
                         "steamvr" => "https://store.steampowered.com/app/250820/SteamVR/",
+                        "quest" => "https://www.vrdesktop.net/",
                         "vcredist" => "https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist",
                         "nvidia" => "https://www.nvidia.com/en-us/drivers/", _ => throw new InvalidDataException("Unknown setup guide.") };
                     using (var process = Process.Start(new ProcessStartInfo(url) { UseShellExecute = true })) { } break;
@@ -665,6 +679,73 @@ internal sealed class WebBridge(ControlService service, Window? owner = null,
                     var (launched, dcsProcess) = await WithWriteAccess(() => service.SyncAndLaunch(_profile, CurrentInventory), () => LaunchSafety.ProfileFolders(_profile, CurrentInventory));
                     dcsProcess.Dispose();
                     _status = LaunchStatus(launched, "DCS launched."); _report = SyncReport(launched); break;
+                case "simpleState":
+                    // The simple interface (inicio.html): the flight modes, the optimizations and the DCS paths.
+                    if (!_shownApplied) { _shownApplied = true; ShowAppliedProfile(); }
+                    if (data.ValueKind == JsonValueKind.Object && data.TryGetProperty("rescan", out var rescan) && rescan.ValueKind == JsonValueKind.True) Invalidate();
+                    await Capture();
+                    return Reply(id, await SimpleView());
+                case "simpleSave":
+                    // Ajustes and the main page's switches: the modes file, then the optimizations in the draft (Solo optimizaciones).
+                    var savedSet = JsonData.Deserialize<FlightModeSet>(data.GetProperty("set").GetRawText());
+                    if (savedSet.Modes.Count == 0 || savedSet.Modes.Any(m => string.IsNullOrWhiteSpace(m.Id))) throw new InvalidDataException("Cada modo necesita un nombre.");
+                    await Task.Run(() => FlightModes.Save(service.StateRoot, savedSet));
+                    if (data.TryGetProperty("optimizations", out var opt) && opt.ValueKind == JsonValueKind.Object)
+                    {
+                        bool Opt(string name, bool current) => opt.TryGetProperty(name, out var v) && v.ValueKind is JsonValueKind.True or JsonValueKind.False ? v.GetBoolean() : current;
+                        _profile = _profile with { Desktop = true, EngineOptimizations = Opt("engineOptimizations", _profile.EngineOptimizations), CpuBoost = Opt("cpuBoost", _profile.CpuBoost), FreeVram = Opt("freeVram", _profile.FreeVram) };
+                    }
+                    if (data.TryGetProperty("dcs", out var dcsPath) && dcsPath.ValueKind == JsonValueKind.String) _dcs = Empty(dcsPath.GetString());
+                    if (data.TryGetProperty("options", out var optionsPath) && optionsPath.ValueKind == JsonValueKind.String) _options = Empty(optionsPath.GetString());
+                    Invalidate();
+                    lock (_draftLock) Drafts.Save(_profile, _dcs, _options);
+                    return Reply(id, await SimpleView());
+                case "openVrem":
+                    // VREM's download page on the DCS user files site.
+                    EnsureInteractive();
+                    using (Process.Start(new ProcessStartInfo("https://www.digitalcombatsimulator.com/en/files/3305420/") { UseShellExecute = true })) { }
+                    return Reply(id, new { });
+                case "simpleReset":
+                    // The recommended modes again; the ReShade switch and path are kept.
+                    await Task.Run(() => { var old = FlightModes.Load(service.StateRoot); FlightModes.Save(service.StateRoot, FlightModeSet.Defaults with { ReShade = old.ReShade, ReShadeOn = old.ReShadeOn }); });
+                    return Reply(id, await SimpleView());
+                case "resetAll":
+                    // Restablecer todo: DCS as before the app (its files and owned settings, the flight modes' options.lua
+                    // values, ReShade and VREM on as installed) and every mode and optimization off, so the app changes nothing.
+                    Invalidate(); await Capture();
+                    if (DcsRunning()) throw new InvalidOperationException("Cierra DCS antes de restablecer.");
+                    var (resetDcs, resetOptions) = (service.ReadAppliedProfile()?.Executable ?? CurrentInventory.DcsExecutable, service.ReadAppliedProfile()?.OptionsPath ?? CurrentInventory.OptionsPath);
+                    var resetNotes = new List<string>();
+                    var baseRestore = await Task.Run(() => service.RestoreOriginals(resetDcs, resetOptions));
+                    resetNotes.Add(baseRestore.Complete ? "Archivos y optimizaciones de DCS Control quitados." : "Algunos archivos no se pudieron restaurar: " + string.Join("; ", baseRestore.Conflicts));
+                    resetNotes.AddRange(await Task.Run(() => FlightModes.ResetAll(service.StateRoot, resetOptions, resetDcs)));
+                    _profile = _profile with { Desktop = true, EngineOptimizations = false, CpuBoost = false, FreeVram = false };
+                    Invalidate();
+                    lock (_draftLock) Drafts.Save(_profile, _dcs, _options);
+                    lock (_flightNotesLock) _flightNotes = [.. resetNotes];
+                    foreach (var note in resetNotes) AppLog.Info("Restablecer todo: " + note);
+                    return Reply(id, await SimpleView());
+                case "fly":
+                    // Volar: the optimizations (Solo optimizaciones: DCS uses Quest Link or the monitor as it is), then the
+                    // mode's settings and programs, then DCS in 2D or VR.
+                    var modeId = data.GetProperty("mode").GetString() ?? throw new InvalidDataException("Elige 2D o VR.");
+                    _profile = _profile with { Desktop = true };
+                    Invalidate(); await Capture();
+                    if (offline)
+                    {
+                        var (flightSync, _) = await Task.Run(() => service.SyncAndPrepareLaunch(_profile, CurrentInventory));
+                        _flightNotes = ["Verificación sin conexión: DCS no se ha iniciado."]; return Reply(id, await SimpleView());
+                    }
+                    var (flown, flightProcess, session) = await WithWriteAccess(() => service.LaunchFlight(modeId, _profile, CurrentInventory), () => LaunchSafety.ProfileFolders(_profile, CurrentInventory));
+                    lock (_flightNotesLock) _flightNotes = ["DCS iniciado en " + session.Mode.Name + ".", .. session.Notes];
+                    foreach (var note in session.Notes) AppLog.Info("Flight mode " + session.Mode.Id + ": " + note);
+                    // After DCS exits: the programs this launch started are closed and the after-flight commands run.
+                    _ = Task.Run(() =>
+                    {
+                        try { using (flightProcess) FlightModes.WaitForDcsExit(flightProcess, session.DcsExecutable); foreach (var note in session.End()) { AppLog.Info("Flight mode " + session.Mode.Id + ": " + note); lock (_flightNotesLock) _flightNotes = [.. _flightNotes, note]; } }
+                        catch (Exception e) { AppLog.Error("Flight mode end", e); }
+                    });
+                    return Reply(id, await SimpleView());
                 case "launchCheck":
                     var start = await Task.Run(service.PrepareLaunchApplied); _report = "Launch contract verified: " + start.FileName; break;
                 case "resetNeural": _profile = RenoSettings.ResetAdvanced(_profile); Invalidate(); _status = "Advanced DLSS 5 image controls reset to their defaults."; break;
@@ -676,7 +757,7 @@ internal sealed class WebBridge(ControlService service, Window? owner = null,
                         var folder = new OpenFolderDialog { Title = "Select provider folder" };
                         return Reply(id, new { path = folder.ShowDialog(owner) == true ? folder.FolderName : null });
                     }
-                    var file = new OpenFileDialog { Title = "Select component", Filter = target switch { "dcs" => "DCS executable|DCS.exe", "options" => "DCS settings|options.lua", "neuralRuntimePath" => "NVIDIA neural runtime|nvngx_dlssnr.dll", "engineDevPayloadPath" => "DcsQvCull payload|*.dll", "engineDevIniPath" => "DcsQvCull settings|*.ini", _ => "OpenXR manifest|*.json" } };
+                    var file = new OpenFileDialog { Title = "Select component", Filter = target switch { "dcs" => "DCS executable|DCS.exe", "options" => "DCS settings|options.lua", "neuralRuntimePath" => "NVIDIA neural runtime|nvngx_dlssnr.dll", "engineDevPayloadPath" => "DcsQvCull payload|*.dll", "engineDevIniPath" => "DcsQvCull settings|*.ini", "program" => "Programa|*.exe", "dll" => "DLL|*.dll", _ => "OpenXR manifest|*.json" } };
                     return Reply(id, new { path = file.ShowDialog(owner) == true ? file.FileName : null });
                 case "rememberRuntime":
                     // The file picked with Browse (DLSS 5 page or guided setup): verified exactly like deployment and kept
@@ -873,7 +954,7 @@ internal sealed class WebBridge(ControlService service, Window? owner = null,
         // DCS running is read now: the scan's flag would keep "Close DCS" listed after DCS exits.
         var issues = ProfileValidation.Validate(service.ResolveNeuralRuntime(_profile), CurrentInventory with { DcsRunning = DcsRunning() }).ToList();
         if (!_profile.Desktop && activeRoute.Route is { } running && running != _profile.Runtime)
-            issues.Insert(0, new("route-mismatch", IssueSeverity.Warning, activeRoute.Summary + " This profile uses " + (_profile.Runtime == RuntimeKind.Pimax ? "the Pimax runtime" : "Sboys through SteamVR") + ". Switch the route or use Read settings from this PC before applying."));
+            issues.Insert(0, new("route-mismatch", IssueSeverity.Warning, activeRoute.Summary + " This profile uses " + RouteRuntime.Describe(_profile.Runtime) + ". Switch the route or use Read settings from this PC before applying."));
         if (FoveaFact(_profile) is { } fact) issues.Add(fact);
         if (Leftovers() is { Count: > 0 } leftovers)
             issues.Insert(0, new("leftovers", IssueSeverity.Warning, $"DCS Control's files are in DCS without a record of what was there before ({string.Join(", ", leftovers.Take(3).Select(l => Path.GetFileName(l.Path)))}{(leftovers.Count > 3 ? $" and {leftovers.Count - 3} more" : "")}), for example after Windows was reinstalled. They stay active even when DCS starts from Steam. Back to stock DCS removes them."));

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+  <title>DCS Control</title><link rel="icon" type="image/svg+xml" href="app-icon.svg"><link rel="stylesheet" href="inicio.css"><script src="inicio.js" defer></script>
+</head>
+<body data-tab="volar">
+<div class="sky" aria-hidden="true"><img src="keyart.svg" alt=""><div class="shade"></div><div class="grid"></div></div>
+
+<header class="top">
+  <div class="brand"><img src="brand-icon.svg" width="26" height="26" alt="" aria-hidden="true"><span>DCS<b>CONTROL</b></span></div>
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-volar" data-tab="volar" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 13.5 21 6l-4.5 13-4-5.5-6 1.5Z"/></svg>Volar</button>
+    <button role="tab" id="tab-ajustes" data-tab="ajustes" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Ajustes</button>
+  </nav>
+  <div class="window-controls" role="group" aria-label="Ventana">
+    <button type="button" data-window="minimize" aria-label="Minimizar" title="Minimizar"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1 5.5H9"/></svg></button>
+    <button type="button" data-window="maximize" aria-label="Maximizar" title="Maximizar"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5H8.5V8.5H1.5Z"/></svg></button>
+    <button type="button" data-window="close" class="close" aria-label="Cerrar" title="Cerrar"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M1.5 1.5 8.5 8.5M8.5 1.5 1.5 8.5"/></svg></button>
+  </div>
+</header>
+
+<main>
+  <!-- ============ VOLAR ============ -->
+  <section id="volar" class="view">
+    <div class="hero">
+      <p class="eyebrow"><span class="led" id="readyLed"></span><span id="readyText">Comprobando DCS…</span></p>
+      <h1>Elige cómo volar</h1>
+
+      <div class="choice" role="radiogroup" aria-label="Modo de vuelo">
+        <button role="radio" class="mode" data-mode="2d" aria-checked="true">
+          <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+          <svg class="art" viewBox="0 0 120 80" aria-hidden="true">
+            <rect x="14" y="8" width="92" height="54" rx="3"/><path d="M50 72h20M60 62v10"/>
+            <path class="hud" d="M60 26v-6M60 44v6M44 35h-6M76 35h6"/><circle class="hud" cx="60" cy="35" r="7"/>
+            <path class="hud thin" d="M26 50 36 40l10 4 14-12 14 8 10-6 10 6"/>
+          </svg>
+          <span class="label"><b>2D</b><small>Monitor</small></span>
+          <span class="apps" data-apps="2d"></span>
+          <span class="check" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="m3.5 8.5 3 3 6-7"/></svg></span>
+        </button>
+        <button role="radio" class="mode" data-mode="vr" aria-checked="false">
+          <span class="corner tl"></span><span class="corner tr"></span><span class="corner bl"></span><span class="corner br"></span>
+          <svg class="art" viewBox="0 0 120 80" aria-hidden="true">
+            <path d="M18 26h84a6 6 0 0 1 6 6v18a6 6 0 0 1-6 6H80l-8-9H48l-8 9H18a6 6 0 0 1-6-6V32a6 6 0 0 1 6-6Z"/>
+            <circle class="hud" cx="36" cy="40" r="7"/><circle class="hud" cx="84" cy="40" r="7"/>
+            <path class="hud thin" d="M30 16c8-6 52-6 60 0"/>
+          </svg>
+          <span class="label"><b>VR</b><small>Meta Quest 3 · Quest Link</small></span>
+          <span class="apps" data-apps="vr"></span>
+          <span class="check" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="m3.5 8.5 3 3 6-7"/></svg></span>
+        </button>
+      </div>
+
+      <label class="toggle">
+        <span class="badge" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17M6 6l12 12"/></svg></span>
+        <span class="toggle-text"><b>ReShade</b><small id="reShadeState">Comprobando…</small></span>
+        <input type="checkbox" id="reShade" role="switch"><i aria-hidden="true"></i>
+      </label>
+
+      <button id="fly" class="fly"><span class="chev" aria-hidden="true">›››</span><span id="flyText">VOLAR</span><span class="chev" aria-hidden="true">‹‹‹</span></button>
+      <p id="status" class="status" aria-live="polite"></p>
+      <ul id="notes" class="notes"></ul>
+    </div>
+    <footer class="strip" id="strip"></footer>
+  </section>
+
+  <!-- ============ AJUSTES ============ -->
+  <section id="ajustes" class="view" hidden>
+    <div class="settings">
+      <nav class="side" aria-label="Secciones">
+        <a href="#s-programas" class="on">Programas</a><a href="#s-reshade">ReShade · VREM</a><a href="#s-rendimiento">Rendimiento</a><a href="#s-dcs">DCS</a><a href="#s-avanzado">Avanzado</a><a href="#s-restablecer">Restablecer</a>
+        <p id="saved" class="saved" aria-live="polite"></p>
+      </nav>
+      <div class="cards" id="cards">
+        <div class="card" id="s-programas">
+          <div class="card-head"><span class="num">01</span><div><h2>Programas que se abren solos</h2><p>Se abren antes que DCS. Si los abrió la app, se cierran al salir de DCS.</p></div></div>
+          <div id="apps"></div>
+        </div>
+
+        <div class="card" id="s-reshade">
+          <div class="card-head"><span class="num">02</span><div><h2>ReShade y VREM</h2><p>El interruptor de Volar lo activa o desactiva en 2D y en VR, renombrando su DLL. Se busca solo junto a DCS.exe (dxgi.dll o d3d11.dll).</p></div></div>
+          <p id="reShadeFound" class="found"></p>
+          <label class="path">DLL de ReShade (vacío: se busca solo)<span><input id="reShadePath" placeholder="…\DCSWorld\bin-mt\dxgi.dll"><button class="small" data-browse="reShadePath">Buscar…</button></span></label>
+          <h3 class="sub">VREM · ReShade VR Enhancer Mod</h3>
+          <p>Etiquetas ocultas tras la cabina, color, nitidez, menos neblina y cielo sin bandas, también en VR. Necesita ReShade con soporte de add-ons y el mod copiado en bin y bin-mt (<a href="#" id="vremLink">descarga</a>).</p>
+          <p id="vremFound" class="found"></p>
+          <label class="row"><span><b>VREM al volar en 2D</b></span><input type="checkbox" id="vrem2d" role="switch"><i aria-hidden="true"></i></label>
+          <label class="row"><span><b>VREM al volar en VR</b></span><input type="checkbox" id="vremvr" role="switch"><i aria-hidden="true"></i></label>
+        </div>
+
+        <div class="card" id="s-rendimiento">
+          <div class="card-head"><span class="num">03</span><div><h2>Rendimiento</h2><p>Funcionan en 2D y en VR, sin cambiar la imagen.</p></div></div>
+          <label class="row"><span><b>Optimizaciones del motor</b><small>Quitan trabajo a la CPU dentro de DCS. Más FPS cuando la CPU es el límite.</small></span><input type="checkbox" id="optEngine" role="switch"><i aria-hidden="true"></i></label>
+          <label class="row"><span><b>Prioridad de CPU</b><small>DCS usa los núcleos más rápidos y tiene prioridad mientras vuelas.</small></span><input type="checkbox" id="optBoost" role="switch"><i aria-hidden="true"></i></label>
+          <label class="row"><span><b>Liberar memoria de vídeo</b><small>Cierra programas que gastan VRAM antes de volar y los vuelve a abrir después.</small></span><input type="checkbox" id="optVram" role="switch"><i aria-hidden="true"></i></label>
+        </div>
+
+        <div class="card" id="s-dcs">
+          <div class="card-head"><span class="num">04</span><div><h2>DCS</h2><p>Se detectan solos. Cámbialos solo si tienes más de una instalación.</p></div></div>
+          <label class="path">DCS.exe<span><input id="dcsPath"><button class="small" data-browse="dcsPath">Buscar…</button></span></label>
+          <label class="path">options.lua (Saved Games\DCS\Config)<span><input id="optionsPath"><button class="small" data-browse="optionsPath">Buscar…</button></span></label>
+        </div>
+
+        <div class="card" id="s-avanzado">
+          <div class="card-head"><span class="num">05</span><div><h2>Avanzado</h2><p>Ajustes de DCS que se escriben antes de volar. Una línea por ajuste: <code>ruta = valor</code>.</p></div></div>
+          <div class="two">
+            <label>En 2D<textarea id="lua2d" rows="6" spellcheck="false"></textarea></label>
+            <label>En VR<textarea id="luavr" rows="6" spellcheck="false"></textarea></label>
+          </div>
+          <label class="row"><span><b>Oculus Debug Tool en VR</b><small>Comandos que se aplican antes de volar y se deshacen al salir.</small></span><input type="checkbox" id="odtOn" role="switch"><i aria-hidden="true"></i></label>
+          <div class="two">
+            <label>Antes de volar<textarea id="odtBefore" rows="3" spellcheck="false"></textarea></label>
+            <label>Al salir<textarea id="odtAfter" rows="3" spellcheck="false"></textarea></label>
+          </div>
+          <label class="path">OculusDebugToolCLI.exe (vacío: se busca solo)<span><input id="odtPath"><button class="small" data-browse="odtPath">Buscar…</button></span></label>
+          <button id="reset" class="small ghost">Volver a los valores recomendados</button>
+        </div>
+
+        <div class="card" id="s-restablecer">
+          <div class="card-head"><span class="num">06</span><div><h2>Restablecer todo</h2><p>Deja DCS como estaba antes de usar la app y apaga todo lo que hace: ajustes de DCS, ReShade y VREM, Oculus Debug Tool y optimizaciones. VOLAR solo abrirá DCS y tus programas. Cierra DCS antes.</p></div></div>
+          <button id="resetAll" class="small danger">Restablecer todo</button>
+          <ul id="resetNotes" class="notes"></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="toast" class="toast" hidden></div>
+</body>
+</html>

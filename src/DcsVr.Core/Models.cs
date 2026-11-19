@@ -3,7 +3,8 @@ using System.Text.Json.Serialization;
 
 namespace DcsVr.Core;
 
-public enum RuntimeKind { Pimax, SboysSteamVr }
+/// <summary>The headset route. Quest (this fork): a Meta Quest on Virtual Desktop's VDXR or Meta's Quest Link runtime.</summary>
+public enum RuntimeKind { Pimax, SboysSteamVr, Quest }
 public enum QuadProvider { None, PimaxNative, QuadViewsFoveated }
 public enum FrameGeneration { Off, Nvidia, FidelityFx }
 public enum GazeMode { Fixed, EyeTracked }
@@ -55,6 +56,12 @@ public sealed record VrProfile
     /// own. The VR settings stay in the profile for the next Pimax or Sboys flight; <see cref="ForLaunch"/> is what
     /// runs.</summary>
     public bool Desktop { get; init; }
+    /// <summary>Optimizations only as 2D (this fork): DCS starts on the monitor. VR.enable is turned off in options.lua
+    /// while the profile is applied (owned like every option: Back to stock DCS turns it back on).</summary>
+    public bool DesktopFlat { get; init; }
+    /// <summary>DLSS 5 on the monitor image in Optimizations only (this fork, experimental): stereo Cheeky without
+    /// Quad Views, Foveated Super Resolution or frame generation, so nothing lowers the image quality.</summary>
+    public bool DesktopNeuralRendering { get; init; }
     public QuadProvider QuadViews { get; init; } = QuadProvider.PimaxNative;
     public FrameGeneration FrameGen { get; init; }
     /// <summary>Output frames per rendered frame: 2 (one generated frame), 3 (OFXR fork triple_frame_gen: two generated
@@ -540,7 +547,7 @@ public sealed record VrProfile
     /// <summary>What a launch runs: with <see cref="Desktop"/> (Optimizations only) the VR features are off, whatever the
     /// profile keeps for the next VR flight; otherwise the profile itself.</summary>
     public VrProfile ForLaunch() => Desktop
-        ? this with { QuadViews = QuadProvider.None, NeuralRendering = false, FoveatedDlss = false, FrameGen = FrameGeneration.Off, QuadFocusAdapter = false, PauseTobiiDesktop = false }
+        ? this with { QuadViews = QuadProvider.None, NeuralRendering = DesktopNeuralRendering, FoveatedDlss = false, FrameGen = FrameGeneration.Off, QuadFocusAdapter = false, PauseTobiiDesktop = false }
         : this;
     public override string ToString() => Name;
 }
@@ -573,6 +580,8 @@ public sealed record InventorySnapshot
     public string? ActiveRuntime { get; init; }
     public string? PimaxRuntime { get; init; }
     public string? SteamVrRuntime { get; init; }
+    /// <summary>The Meta Quest runtime found on this PC (<see cref="QuestRoute.Find"/>): VDXR or Meta's Quest Link.</summary>
+    public string? QuestRuntime { get; init; }
     public string? PimaxVersion { get; init; }
     public bool DcsRunning { get; init; }
     public TrackingKind Tracking { get; init; }

@@ -96,7 +96,11 @@ internal sealed class WebWindow : Window
 
 internal static class WebHost
 {
-    public const string Address = "https://dcs-vr.example/index.html";
+    /// <summary>The app's page: the simple Spanish interface (inicio.html).</summary>
+    public const string Address = "https://dcs-vr.example/inicio.html";
+    /// <summary>The full interface, kept for the offline verification (smoke.js).</summary>
+    public const string ClassicAddress = "https://dcs-vr.example/index.html";
+    public static bool Allowed(string? uri) => uri == Address || uri == ClassicAddress;
     public static void Configure(CoreWebView2 core, WebBridge bridge)
     {
         // .example avoids the mDNS lookup delay WebView2 documents for .local host names.
@@ -104,7 +108,7 @@ internal static class WebHost
         core.Settings.AreDefaultContextMenusEnabled = false; core.Settings.AreDevToolsEnabled = false;
         core.Settings.AreBrowserAcceleratorKeysEnabled = false; core.Settings.IsStatusBarEnabled = false;
         core.Settings.IsGeneralAutofillEnabled = false; core.Settings.IsPasswordAutosaveEnabled = false;
-        core.NavigationStarting += (_, e) => { if (e.Uri != Address) e.Cancel = true; };
+        core.NavigationStarting += (_, e) => { if (!Allowed(e.Uri)) e.Cancel = true; };
         core.NewWindowRequested += (_, e) => e.Handled = true;
         core.DownloadStarting += (_, e) => e.Cancel = true;
         core.PermissionRequested += (_, e) => e.State = CoreWebView2PermissionState.Deny;
@@ -115,7 +119,7 @@ internal static class WebHost
             string? json = null, response;
             try
             {
-                if (e.Source != Address) return;
+                if (!Allowed(e.Source)) return;
                 json = e.WebMessageAsJson;
                 using (var document = System.Text.Json.JsonDocument.Parse(json))
                     if (document.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object || !document.RootElement.TryGetProperty("action", out System.Text.Json.JsonElement _)) return;

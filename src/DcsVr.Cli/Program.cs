@@ -119,6 +119,28 @@ try
             using (process) Console.WriteLine(sync.Message + " DCS launched.");
             break;
         }
+        case "modes":
+        {
+            // Lists the flight modes; the first time, writes the defaults to flight-modes.json to edit.
+            var path = FlightModes.PathIn(service.StateRoot);
+            if (!File.Exists(path)) FlightModes.Save(service.StateRoot, FlightModeSet.Defaults);
+            var set = FlightModes.Load(service.StateRoot);
+            foreach (var m in set.Modes) Console.WriteLine($"{m.Id}: {m.Name} ({m.Kind}, {m.Apps.Count(a => a.Enabled)} programs)");
+            Console.WriteLine("ReShade: " + (set.ReShadeOn is { } r ? (r ? "on" : "off") : "unchanged")); Console.WriteLine("Edit: " + path); break;
+        }
+        case "fly":
+        {
+            // fly 2d | fly vr: the applied profile, then the mode's settings and programs; waits for DCS to exit and cleans up.
+            var modeId = args.Length > 1 && !args[1].StartsWith("--", StringComparison.Ordinal) ? args[1] : FlightModes.Load(service.StateRoot).LastModeId;
+            var applied = service.ReadAppliedProfile();
+            var inventory = new WindowsInventory().Capture(Option("--dcs") ?? applied?.Executable, Option("--options") ?? applied?.OptionsPath);
+            var (sync, process, session) = service.LaunchFlight(modeId, null, inventory);
+            Console.WriteLine(sync.Message + " DCS launched in " + session.Mode.Name + ".");
+            foreach (var note in session.Notes) Console.WriteLine(note);
+            using (process) FlightModes.WaitForDcsExit(process, session.DcsExecutable);
+            foreach (var note in session.End()) Console.WriteLine(note);
+            break;
+        }
         // Runs in its own process so it outlives the app; started automatically when a boosted profile launches DCS.
         case "boost": return BoostRuntime.Run(args[1..], Console.Out, Console.Error);
         // Started elevated by the app (Start Tobii) when an ended helper left the desktop Tobii services stopped.
@@ -126,7 +148,7 @@ try
         default:
             // An unknown command is an error (a typo must not look like success to a script); "help" is not.
             if (command != "help") Console.Error.WriteLine("Unknown command: " + command);
-            Console.WriteLine("DCS Control " + ProductInfo.Version + "\nCommands: inventory, readiness, detect, presets, validate, preview, apply, live-apply, status, restore, diagnostic, inspect-binary, launch-check, launch, boost, tobii-resume, nvidia, app-verify, app-install, app-uninstall\nOptions: --profile file.json --dcs DCS.exe --options options.lua --state folder --distribution folder --out report.json\npreview leaves DCS and registry unchanged. apply writes the profile over whatever is installed; the first time it writes a path it backs up the original. live-apply writes now, also while DCS runs, only the settings DCS Control applies live (the engine module's, pupil shift layer's, Quad Views', OFXR's and Cheeky's files); the rest waits for the next launch. status lists the original files and the applied profile. restore puts every original back (owned options.lua settings only). launch first brings the applied profile up to date (Pimax Play focus values)."); if (command != "help") return 1; break;
+            Console.WriteLine("DCS Control " + ProductInfo.Version + "\nCommands: inventory, readiness, detect, presets, validate, preview, apply, live-apply, status, restore, diagnostic, inspect-binary, launch-check, launch, modes, fly, boost, tobii-resume, nvidia, app-verify, app-install, app-uninstall\nOptions: --profile file.json --dcs DCS.exe --options options.lua --state folder --distribution folder --out report.json\npreview leaves DCS and registry unchanged. apply writes the profile over whatever is installed; the first time it writes a path it backs up the original. live-apply writes now, also while DCS runs, only the settings DCS Control applies live (the engine module's, pupil shift layer's, Quad Views', OFXR's and Cheeky's files); the rest waits for the next launch. status lists the original files and the applied profile. restore puts every original back (owned options.lua settings only). launch first brings the applied profile up to date (Pimax Play focus values)."); if (command != "help") return 1; break;
     }
     return 0;
 }
